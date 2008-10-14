@@ -192,6 +192,20 @@ class Modem
 		end
 	end
 	
+	def query(cmd)
+		out = command cmd
+		
+		# only very simple responses are supported
+		# (on purpose!) here - [response, crlf, ok]
+		if (out.length==3) and (out[2]=="OK")
+			return out[0]
+			
+		else
+			err = "Invalid response: #{out.inspect}"
+			raise RuntimeError.new(err)
+		end
+	end
+	
 	
 	# just wait for a response, by reading
 	# until an OK or ERROR terminator is hit
@@ -261,6 +275,20 @@ class ModemCommander
 		true
 	end
 	
+	# ====
+	# UTILITY
+	# ====
+	
+	def signal
+		data = @m.query("AT+CSQ")
+		if m = data.match(/^\+CSQ: (\d+),/)
+			return m.captures[0].to_i
+		else
+			err = "Not CSQ data: #{data.inspect}"
+			raise RuntimeError.new(err)
+		end
+	end
+	
 	
 	
 	
@@ -272,7 +300,8 @@ class ModemCommander
 		@busy = true
 		
 		# the number must be in the international
-		# format, so add a PLUS, if needed
+		# format for some SMSCs (notably, the one
+		# i'm on right now) so maybe add a PLUS
 		to = "+#{to}" unless(to[0,1]=="+")
 		
 		# initiate the sms, and wait for either
@@ -312,8 +341,8 @@ class ModemCommander
 							# for now, croak when receiving data
 							# other than incomming sms. we should
 							# probably re-insert into the queue...
-							raise RuntimeError.new\
-								"Got unexpected data: #{data.inspect}"
+							err = "Not CMT data: #{data.inspect}"
+							raise RuntimeError.new(err)
 						end
 					end
 				end
@@ -334,6 +363,10 @@ if __FILE__ == $0
 		m = Modem.new "/dev/ttyUSB0"
 		mc = ModemCommander.new(m)
 		mc.use_pin(1234)
+		
+		
+		# demonstrate that the modem is working
+		puts "Signal strength: #{mc.signal}"
 		
 		
 		# a very simple "application", which
