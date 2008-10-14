@@ -394,9 +394,7 @@ if __FILE__ == $0
 		puts "Initializing modem..."
 		m = Modem.new "/dev/ttyUSB0"
 		mc = ModemCommander.new(m)
-		mc.use_pin(1234)
-		
-		#puts mc.set_band 1900
+		#mc.use_pin(1234)
 		
 		# demonstrate that the modem is working
 		puts "Waiting for network..."
