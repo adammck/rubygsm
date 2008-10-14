@@ -36,11 +36,20 @@ module NotKannel
 		
 			if to and txt
 				puts ">> #{to}: #{txt}"
-				$mc.send to, txt
-				res.write "OK"
+				begin
+					sleep 5
+					$mc.send to, txt
+					res.write "OK"
+				
+				# couldn't send the message
+				rescue Modem::Error => err
+					puts "[!!] #{err.desc}"
+					res.write "ERROR"
+				end
 			
 			else
-				puts env.inspect
+				# the http request didn't
+				# include the required params
 				res.write "MISSING PARAMS"
 			end
 		
@@ -50,22 +59,30 @@ module NotKannel
 end
 
 
-
-# initialize the modem
-puts "Initializing Modem..."
-m = Modem.new "/dev/ttyUSB0"
-$mc = ModemCommander.new(m)
-$mc.use_pin(1234)
-
-
-# start receiving sms
-k = NotKannel::Receiver.new
-rcv = k.method :incomming
-$mc.receive rcv
+begin
+	# initialize the modem
+	puts "Initializing Modem..."
+	m = Modem.new "/dev/ttyUSB0"
+	$mc = ModemCommander.new(m)
+	$mc.use_pin(1234)
 
 
-# and sending!
-Rack::Handler::Mongrel.run(
-	NotKannel::Sender.new,
-	:Port=>13013)
+	# start receiving sms
+	k = NotKannel::Receiver.new
+	rcv = k.method :incomming
+	$mc.receive rcv
+
+
+	# and sending!
+	puts "Running NotKannel..."
+	Rack::Handler::Mongrel.run(
+		NotKannel::Sender.new,
+		:Port=>13013)
+
+
+# something went wrong during startup
+rescue Modem::Error => err
+	puts "\n[ERR] #{err.desc}\n"
+	puts err.backtrace
+end
 
