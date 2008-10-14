@@ -8,11 +8,55 @@ class Modem
 	class Error < StandardError
 		ERRORS = {
 			"CME" => {
-				5  => "PH-SIM PIN required (SIM lock)",
-				10 => "SIM not inserted",
-				11 => "SIM PIN required",
-				12 => "SIM PUK required",
-				13 => "SIM failure"
+				3 =>   "Operation not allowed",
+				4 =>   "Operation not supported",
+				5 =>   "PH-SIM PIN required (SIM lock)",
+				10 =>  "SIM not inserted",
+				11 =>  "SIM PIN required",
+				12 =>  "SIM PUK required",
+				13 =>  "SIM failure",
+				16 =>  "Incorrect password",
+				17 =>  "SIM PIN2 required",
+				18 =>  "SIM PUK2 required",
+				20 =>  "Memory full",
+				21 =>  "Invalid index",
+				22 =>  "Not found",
+				24 =>  "Text string too long",
+				26 =>  "Dial string too long",
+				27 =>  "Invalid characters in dial string",
+				30 =>  "No network service",
+				32 =>  "Network not allowed – emergency calls only",
+				40 =>  "Network personal PIN required (Network lock)",
+				103 => "Illegal MS (#3)",
+				106 => "Illegal ME (#6)",
+				107 => "GPRS services not allowed (#7)",
+				111 => "PLMN not allowed (#11)",
+				112 => "Location area not allowed (#12)",
+				113 => "Roaming not allowed in this area (#13)",
+				132 => "service option not supported (#32)",
+				133 => "requested service option not subscribed (#33)",
+				134 => "service option temporarily out of order (#34)",
+				148 => "unspecified GPRS error",
+				149 => "PDP authentication failure",
+				150 => "invalid mobile class"
+			}
+			"CMS" => {
+				301 => "SMS service of ME reserved",
+				302 => "Operation not allowed",
+				303 => "Operation not supported",
+				304 => "Invalid PDU mode parameter",
+				305 => "Invalid text mode parameter",
+				310 => "SIM not inserted",
+				311 => "SIM PIN required",
+				312 => "PH-SIM PIN required",
+				313 => "SIM failure",
+				316 => "SIM PUK required",
+				317 => "SIM PIN2 required",
+				318 => "SIM PUK2 required",
+				321 => "Invalid memory index",
+				322 => "SIM memory full",
+				330 => "SC address unknown",
+				340 => "no +CNMA acknowledgement expected"
 			}
 		}
 		
