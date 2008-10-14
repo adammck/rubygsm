@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
 # vim: noet
 
-require "rubygems"
 require "rubygsm"
+require "rubygems"
 require "net/http"
 require "rack"
 
