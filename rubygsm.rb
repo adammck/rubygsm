@@ -267,7 +267,7 @@ class ModemCommander
 		
 			# if the command failed, then
 			# the pin was not accepted
-			rescue Mobile::Error
+			rescue Modem::Error
 				return false
 			end
 		end
@@ -275,18 +275,50 @@ class ModemCommander
 		true
 	end
 	
+	
+	
+	
 	# ====
-	# UTILITY
+	# NETWORK
 	# ====
 	
 	def signal
 		data = @m.query("AT+CSQ")
 		if m = data.match(/^\+CSQ: (\d+),/)
-			return m.captures[0].to_i
+			csq = m.captures[0].to_i
+			
+			# 99 represents "not known or not
+			# detectable", which usually means
+			# the modem isn't on the network
+			if csq==99
+				err = "Signal strength unknown"
+				raise RuntimeError.new(err)
+			end
+			
+			return csq
+			
 		else
 			err = "Not CSQ data: #{data.inspect}"
 			raise RuntimeError.new(err)
 		end
+	end
+	
+	# wait until the signal strength
+	# is below 99 (not on the network)
+	def wait_for_network
+		begin
+			csq = signal
+			
+		# keep retrying until the
+		# network comes up (if ever)
+		rescue RuntimeError
+			sleep 1
+			retry
+		end
+		
+		# return the last
+		# signal strength
+		return csq
 	end
 	
 	
@@ -359,14 +391,17 @@ end
 if __FILE__ == $0
 	begin
 		# initialize the modem
-		puts "Initializing Modem..."
+		puts "Initializing modem..."
 		m = Modem.new "/dev/ttyUSB0"
 		mc = ModemCommander.new(m)
 		mc.use_pin(1234)
 		
+		#puts mc.set_band 1900
 		
 		# demonstrate that the modem is working
-		puts "Signal strength: #{mc.signal}"
+		puts "Waiting for network..."
+		str = mc.wait_for_network
+		puts "Signal strength: #{str}"
 		
 		
 		# a very simple "application", which
@@ -389,7 +424,7 @@ if __FILE__ == $0
 		
 		
 		# wait for incomming sms
-		puts "Starting App..."
+		puts "Starting app..."
 		rcv  = ReverseApp.new mc
 		meth = rcv.method :incomming
 		mc.receive meth
