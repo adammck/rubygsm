@@ -91,7 +91,8 @@ class Modem
 				if(@type and ERRORS[@type] and @code)
 			
 			# fall back to something not-so useful
-			return "Unknown error [type=#{@type}] [code=#{code}]"
+			return "Unknown error (unrecognized command?) " +\
+			       "[type=#{@type}] [code=#{code}]"
 		end
 	end
 	
@@ -99,7 +100,7 @@ class Modem
 	
 	
 	attr_reader :device, :traffic
-	def initialize(port, baud=9600, cmd_delay=1)
+	def initialize(port, baud=9600, cmd_delay=0.25)
 	
 		# port, baud, data bits, stop bits, parity
 		@device = SerialPort.new(port, baud, 8, 1, SerialPort::NONE)
@@ -245,6 +246,14 @@ class ModemCommander
 	def initialize(modem)
 		@busy = false
 		@m = modem
+	end
+	
+	def hardware
+		return {
+			:manufacturer => @m.query("AT+CGMI"),
+			:model        => @m.query("AT+CGMM"),
+			:revision     => @m.query("AT+CGMR"),
+			:serial       => @m.query("AT+CGSN") }
 	end
 	
 	
@@ -394,9 +403,13 @@ if __FILE__ == $0
 		puts "Initializing modem..."
 		m = Modem.new "/dev/ttyUSB0"
 		mc = ModemCommander.new(m)
-		#mc.use_pin(1234)
+		mc.use_pin(1234)
 		
 		# demonstrate that the modem is working
+		puts "Identifying hardware..."
+		puts mc.hardware.inspect
+		
+		# wait until the device has a signal
 		puts "Waiting for network..."
 		str = mc.wait_for_network
 		puts "Signal strength: #{str}"
@@ -434,7 +447,8 @@ if __FILE__ == $0
 		
 		
 	rescue Modem::Error => err
-		puts "[ERR] #{err.desc}"
+		puts "\n[ERR] #{err.desc}\n"
+		puts err.backtrace
 	end
 end
 
