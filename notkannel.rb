@@ -17,7 +17,15 @@ module NotKannel
 			puts "<< #{caller}: #{msg}"
 			msg = Rack::Utils.escape(msg)
 			url = "/?sender=#{caller}&message=#{msg}"
-			Net::HTTP.get "localhost", url, 4500
+			
+			begin
+				Net::HTTP.get "localhost", url, 4500
+			
+			# it's okay if the request failed,
+			# but log it anyway
+			rescue Errno::ECONNREFUSED
+				puts "!! Couldn't GET: #{url}"
+			end
 		end
 	end
 
