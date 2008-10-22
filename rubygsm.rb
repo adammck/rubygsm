@@ -2,9 +2,12 @@
 # vim: noet
 
 require "serialport.so"
-
+require "timeout.rb"
+require "date.rb"
 
 class Modem
+	include Timeout
+	
 	class Error < StandardError
 		ERRORS = {
 			"CME" => {
@@ -96,6 +99,12 @@ class Modem
 		end
 	end
 	
+	class TimeoutError < Error
+		def desc
+			return "The command timed out"
+		end
+	end
+	
 	
 	
 	
@@ -105,12 +114,102 @@ class Modem
 		# port, baud, data bits, stop bits, parity
 		@device = SerialPort.new(port, baud, 8, 1, SerialPort::NONE)
 		@cmd_delay = cmd_delay
+		@log_level = QUIET
+		@read_timeout = 20
+		@locked = false
 		
-		# enable useful errors
-		command("AT+CMEE=1")
+		# to store incoming messages
+		@incoming = []
+		
+		# initialize the modem
+		command "ATE0"      # echo off
+		command "AT+WIND=0" # no notifications
+		command "AT+CMEE=1" # useful errors
+		command "AT+CMGF=1" # switch to text mode
+		#command("AT+CSMS=1")
 	end
 	
 	
+	attr_accessor :log_level, :read_timeout, :incoming
+	attr_reader :locked
+	
+	QUIET = 1
+	DEBUG = 2
+	def log(msg, level=DEBUG)
+		if @log_level >= level
+			puts msg
+		end
+	end
+	
+	
+	
+	
+	private # ------------------------------------------------------ PRIVATE --
+	
+	INCOMING_FMT = "%y/%m/%d,%H:%M:%S%Z"
+	
+	def parse_incoming_timestamp(ts)
+		# extract the weirdo quarter-hour timezone,
+		# convert it into a regular hourly offset
+		ts.sub! /(\d+)$/ do |m|
+			sprintf("%02d", (m.to_i/4))
+		end
+		
+		# parse the timestamp, and attempt to re-align
+		# it according to the timezone we extracted
+		DateTime.strptime(ts, INCOMING_FMT)
+	end
+	
+	def parse_incoming_sms!(lines)
+		n = 0
+		
+		# iterate the lines like it's 1984
+		# (because we're patching the array,
+		# which is hard work for iterators)
+		while n < lines.length
+			
+			# not a CMT string? ignore it
+			unless lines[n][0,5] == "+CMT:"
+				n += 1
+				next
+			end
+			
+			# since this line IS a CMT string (an incomming
+			# SMS), parse it and store it to deal with later
+			unless m = lines[n].match(/^\+CMT: "(.+?)",.*?,"(.+?)".*?$/)
+				err = "Couldn't parse CMT data: #{buf}"
+				raise RuntimeError.new(err)
+			end
+			
+			# extract the meta-info from the CMT line,
+			# and the message from the FOLLOWING line
+			caller, timestamp = *m.captures
+			msg = lines[n+1].strip
+			
+			# notify the network that we accepted
+			# the incoming message (for read receipt)
+			# BEFORE pushing it to the incoming queue
+			# (to avoid really ugly race condition)
+			command "AT+CNMA"
+			
+			# store the incoming data to be picked up
+			# from the attr_accessor as a tuple (this
+			# is kind of ghetto, and WILL change later)
+			dt = parse_incoming_timestamp(timestamp)
+			@incoming.push [caller, dt, msg]
+			
+			# drop the two CMT lines (meta-info and message),
+			# and patch the index to hit the next unchecked
+			# line during the next iteration
+			lines.slice!(n,2)
+			n -= 1
+		end
+	end
+	
+	
+	
+	
+	public # -------------------------------------------------------- PUBLIC --
 	
 	
 	# send a string to the modem
@@ -120,6 +219,7 @@ class Modem
 		end
 	end
 	
+	
 	# read from the modem (blocking) until
 	# the term character is hit, and return
 	def read(term=nil)
@@ -127,53 +227,51 @@ class Modem
 		term = [term] unless term.is_a? Array
 		buf = ""
 		
-		while true do
-			buf << sprintf("%c", @device.getc)
-			
-			# if a terminator was just received,
-			# then return the current buffer
-			term.each do |t|
-				l = t.length
-				if buf[-l, l] == t
-					return buf.strip
+		timeout(@read_timeout, TimeoutError) do
+			while true do
+				buf << sprintf("%c", @device.getc)
+				
+				# if a terminator was just received,
+				# then return the current buffer
+				term.each do |t|
+					len = t.length
+					if buf[-len, len] == t
+						return buf.strip
+					end
 				end
 			end
 		end
 	end
 	
-	# read from the modem (it actually IS blocking,
-	# but will return immediately if there is nothing
-	# to read), and return all pending data
-	def read_nonblock
-		buf = ""
-		
-		begin
-			# keep on reading until
-			# there's nothing left
-			while true
-				buf << @device.read_nonblock(1)
-			end
-			
-		# when no more data is available,
-		# return what we buffered so far
-		rescue Errno::EAGAIN
-			return buf
-		end
-	end
-
-
-
 	
 	# issue a single command, and wait for the response
 	def command(cmd, resp_term=nil, send_term="\r")
+		log "C: #{cmd}"
+		
 		begin
 			send(cmd + send_term)
 			out = wait(resp_term)
-		
-			# most of the time, the command will be echoed back
-			# before the response. not useful to us, so drop it
-			out.shift if out.first == cmd
-		
+			
+			# some hardware (my motorola phone) adds extra CRLFs
+			# to some responses. i see no reason that we need them
+			out.delete ""
+			
+			# for the time being, ignore any unsolicited
+			# status messages. i can't seem to figure out
+			# how to disable them (AT+WIND=0 doesn't work)
+			out.delete_if do |line|
+				(line[0,6] == "+WIND:") or
+				(line[0,6] == "+CREG:") or
+				(line[0,7] == "+CGREG:")
+			end
+			
+			# parse out any incoming sms that were bundled
+			# with this data (to be fetched later by an app)
+			parse_incoming_sms!(out)
+			
+			# log the modified output
+			log "C: #{cmd} >> #{out.inspect}"
+			
 			# rest up for a bit (modems are
 			# slow, and get confused easily)
 			sleep(@cmd_delay)
@@ -184,6 +282,8 @@ class Modem
 		# then automatically re-try the command after
 		# a short delay. for others, propagate
 		rescue Modem::Error => err
+			log "C: #{cmd} >> ERROR: #{err.desc}"
+			
 			if (err.type == "CMS") and (err.code == 515)
 				sleep 2
 				retry
@@ -193,12 +293,15 @@ class Modem
 		end
 	end
 	
+	
 	def query(cmd)
+		log "Q: #{cmd}"
 		out = command cmd
 		
 		# only very simple responses are supported
 		# (on purpose!) here - [response, crlf, ok]
-		if (out.length==3) and (out[2]=="OK")
+		if (out.length==2) and (out[1]=="OK")
+			log "Q: #{cmd} >> #{out[0].inspect}"
 			return out[0]
 			
 		else
@@ -212,26 +315,26 @@ class Modem
 	# until an OK or ERROR terminator is hit
 	def wait(term=nil)
 		buffer = []
-
+		
 		while true do
 			buf = read(term)
 			buffer.push(buf)
-			
+		
 			# some errors contain useful error codes,
 			# so raise a proper error with a description
 			if m = buf.match(/^\+(CM[ES]) ERROR: (\d+)$/)
 				raise Error.new(*m.captures)
 			end
-			
+		
 			# some errors are not so useful :|
 			raise Error if(buf == "ERROR")
-			
+		
 			# most commands return OK upon success, except
 			# for those which prompt for more data (CMGS)
 			if (buf=="OK") or (buf==">")
 				return buffer
 			end
-			
+		
 			# some commands DO NOT respond with OK,
 			# even when they're successful, so check
 			# for those exceptions manually
@@ -334,7 +437,44 @@ class ModemCommander
 	
 	
 	# ====
-	# SMS
+	# MESSAGE STORAGE
+	# ====
+	
+	CMGL_STATUS = {
+		:all => "ALL",
+		:read => "REC READ",
+		:unread => "REC UNREAD"
+	}
+	
+	def messages(status=:unread)
+		puts @m.query "AT+CMGL=?"
+		
+		arg = CMGL_STATUS[status]
+		msgs = @m.command 'AT+CMGL="STO SENT"'#\"#{arg}\"\r\n", nil, ""
+		out = []
+		
+		unless msgs.pop == "OK"
+			err = "Not CMGL data: #{msgs.inspect}"
+			raise RuntimeError.new(err)
+		end
+		
+		0.upto((msgs.length/2)-1) do |n|
+			meta, msg = msgs[(n*2), 2]
+			
+			if m = meta.match(/^\+CMGL:\s*(\d+),"(.+?)","(.+?)"$/)
+				index, status, caller = *m.captures
+				
+				out.push [caller, msg]
+			end
+		end
+		
+		return out
+	end
+	
+	
+	
+	# ====
+	# SMS RELAYING
 	# ====
 	
 	def send(to, msg)
@@ -360,39 +500,46 @@ class ModemCommander
 		return true
 	end
 	
-	def receive(callback)
-		# enable new message indication
-		@m.command "AT+CNMI=2,2,0,0,0"
-		
+	def receive(callback, join_thread=false)
+		@polled = 0
+
 		# poll for incomming messages
 		# in a separate thread. the @busy
 		# flag is used to suspend polling
-		Thread.new do
+		@thr = Thread.new do
 			while true
-				if !@busy and (data = @m.read_nonblock)
-					unless data.empty?
-						
-						# (attempt to) parse the incomming sms, and
-						# pass the data back to the callback method
-						if m = data.match(/^\+CMT: "(.+?)"(.*?)\r\n(.+)$/)
-							caller, meta, msg = *m.captures
-							callback.call caller, msg.strip
+				@m.command "AT"
+				
+				unless @m.incoming.empty?
+					@m.incoming.each do |inc|
+						begin
+							callback.call *inc
 							
-						else
-							# for now, croak when receiving data
-							# other than incomming sms. we should
-							# probably re-insert into the queue...
-							err = "Not CMT data: #{data.inspect}"
-							raise RuntimeError.new(err)
+						rescue StandardError => err
+							puts "Error in callback: #{err}"
 						end
 					end
+					
+					@m.incoming.clear
 				end
 			
-				# re-poll every
-				# two seconds
-				sleep(2)
+				# enable new message notification mode
+				# every thirty seconds, in case the
+				# modem "forgets" (power cycle, etc)
+				if (@polled % 15) == 0
+					@m.command "AT+CNMI=2,2,0,0,0"
+				end
 			end
+			
+			# re-poll every
+			# two seconds
+			@polled += 1
+			sleep(2)
 		end
+		
+		# it's sometimes handy to run single-
+		# threaded (like debugging handsets)
+		@thr.join if join_thread
 	end
 end
 
@@ -402,12 +549,15 @@ if __FILE__ == $0
 		# initialize the modem
 		puts "Initializing modem..."
 		m = Modem.new "/dev/ttyUSB0"
+		#m.log_level = Modem::DEBUG
 		mc = ModemCommander.new(m)
 		mc.use_pin(1234)
 		
 		# demonstrate that the modem is working
 		puts "Identifying hardware..."
-		puts mc.hardware.inspect
+		mc.hardware.each do |k,v|
+			puts "  #{k}: #{v}"
+		end
 		
 		# wait until the device has a signal
 		puts "Waiting for network..."
@@ -422,13 +572,19 @@ if __FILE__ == $0
 				@mc = mc
 			end
 			
+			def time(dt=nil)
+				dt = DateTime.now unless dt
+				#dt.strftime("%I:%M%p, %d/%m")
+				dt.strftime("%I:%M%p")
+			end
+			
 			def send(to, msg)
-				puts "[OUT] #{to}: #{msg}"
+				puts "[OUT] #{time} -> #{to}: #{msg}"
 				@mc.send to, msg
 			end
 			
-			def incomming(from, msg)
-				puts "[IN]  #{from}: #{msg}"
+			def incomming(from, dt, msg)
+				puts "[IN]  #{time(dt)} <- #{from}: #{msg}"
 				send from, msg.reverse
 			end
 		end
@@ -439,6 +595,7 @@ if __FILE__ == $0
 		rcv  = ReverseApp.new mc
 		meth = rcv.method :incomming
 		mc.receive meth
+		#puts mc.messages.inspect
 		
 		# block until ctrl+c
 		while true do
@@ -449,6 +606,15 @@ if __FILE__ == $0
 	rescue Modem::Error => err
 		puts "\n[ERR] #{err.desc}\n"
 		puts err.backtrace
+	
+	
+	rescue Interrupt
+		if m
+			puts "Resetting modem..."
+			#m.command "AT+CFUN=1"
+			m.command "ATZ"
+		end
+		# do nothing
 	end
 end
 

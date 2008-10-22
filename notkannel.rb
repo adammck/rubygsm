@@ -8,17 +8,23 @@ require "rack"
 
 
 module NotKannel
+	def self.time(dt=nil)
+		dt = DateTime.now unless dt
+		#dt.strftime("%I:%M%p, %d/%m")
+		dt.strftime("%I:%M%p")
+	end
 
-	# incomming sms are http GETted to
+	# incoming sms are http GETted to
 	# localhost, where an app should be
 	# waiting to do something interesting
 	class Receiver
-		def incomming caller, msg
-			puts "<< #{caller}: #{msg}"
-			msg = Rack::Utils.escape(msg)
-			url = "/?sender=#{caller}&message=#{msg}"
+		def incomming from, dt, msg
+			time = NotKannel::time(dt)
+			puts "[IN]  #{time} <- #{from}: #{msg}"
 			
 			begin
+				msg = Rack::Utils.escape(msg)
+				url = "/?sender=#{from}&message=#{msg}"
 				Net::HTTP.get "localhost", url, 4500
 			
 			# it's okay if the request failed,
@@ -43,7 +49,9 @@ module NotKannel
 			txt = req.GET["text"]
 		
 			if to and txt
-				puts ">> #{to}: #{txt}"
+				time = NotKannel::time
+				puts "[OUT] #{time} -> #{to}: #{txt}"
+				
 				begin
 					sleep 5
 					$mc.send to, txt
@@ -51,7 +59,7 @@ module NotKannel
 				
 				# couldn't send the message
 				rescue Modem::Error => err
-					puts "[!!] #{err.desc}"
+					puts "!! #{err.desc}"
 					res.write "ERROR"
 				end
 			
@@ -71,6 +79,7 @@ begin
 	# initialize the modem
 	puts "Initializing Modem..."
 	m = Modem.new "/dev/ttyUSB0"
+	m.log_level = Modem::DEBUG
 	$mc = ModemCommander.new(m)
 	$mc.use_pin(1234)
 
