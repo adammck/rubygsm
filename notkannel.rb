@@ -79,7 +79,6 @@ begin
 	# initialize the modem
 	puts "Initializing Modem..."
 	m = Modem.new "/dev/ttyUSB0"
-	m.log_level = Modem::DEBUG
 	$mc = ModemCommander.new(m)
 	$mc.use_pin(1234)
 
@@ -90,7 +89,7 @@ begin
 	$mc.receive rcv
 
 
-	# and sending!
+	# ...and sending!
 	puts "Running NotKannel..."
 	Rack::Handler::Mongrel.run(
 		NotKannel::Sender.new,
