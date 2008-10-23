@@ -143,8 +143,8 @@ begin
 			end
 
 			# re-check in
-			# five seconds
-			sleep 5
+			# two seconds
+			sleep 2
 		end
 	end
 
