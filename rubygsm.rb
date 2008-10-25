@@ -695,9 +695,9 @@ end
 
 
 if __FILE__ == $0
+	port = (ARGV.length > 0) ? ARGV[0] : "/dev/ttyUSB0"
 	Thread.abort_on_exception = true
 	Thread.current["name"] = "main"
-	port = ARGV.length ? ARGV[0] : "/dev/ttyUSB0"
 	
 	begin
 		# initialize the modem

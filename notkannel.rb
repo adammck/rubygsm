@@ -100,7 +100,7 @@ end
 begin
 	# initialize receiver (this works
 	# even if no modem is plugged in)
-	port = ARGV.length ? ARGV[0] : "/dev/ttyUSB0"
+	port = (ARGV.length > 0) ? ARGV[0] : "/dev/ttyUSB0"
 	k = NotKannel::Receiver.new
 	rcv = k.method :incomming
 	$mc = nil
@@ -119,6 +119,11 @@ begin
 	rescue Errno::ENOENT
 		puts "FAIL. Are you sure that your " +\
 		     "modem is plugged in to #{port}?\n--"
+	
+	# something else went wrong
+	rescue Modem::Error => err
+		puts "FAIL. Couldn't initialize the modem"
+		puts "RubyGSM says: #{err.desc}\n--"
 	end
 	
 	
