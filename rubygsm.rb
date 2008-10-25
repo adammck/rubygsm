@@ -697,11 +697,12 @@ end
 if __FILE__ == $0
 	Thread.abort_on_exception = true
 	Thread.current["name"] = "main"
+	port = ARGV.length ? ARGV[0] : "/dev/ttyUSB0"
 	
 	begin
 		# initialize the modem
-		puts "Initializing modem..."
-		m = Modem.new "/dev/ttyUSB0"
+		puts "Initializing modem on #{port}..."
+		m = Modem.new port
 		mc = ModemCommander.new(m)
 		mc.use_pin(1234)
 		

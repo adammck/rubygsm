@@ -24,6 +24,7 @@ module NotKannel
 			
 			begin
 				msg = Rack::Utils.escape(msg)
+				from = Rack::Utils.escape(from)
 				url = "/?sender=#{from}&message=#{msg}"
 				Net::HTTP.get "localhost", url, 4500
 			
@@ -99,9 +100,9 @@ end
 begin
 	# initialize receiver (this works
 	# even if no modem is plugged in)
+	port = ARGV.length ? ARGV[0] : "/dev/ttyUSB0"
 	k = NotKannel::Receiver.new
 	rcv = k.method :incomming
-	port = "/dev/ttyUSB0"
 	$mc = nil
 	
 	begin
