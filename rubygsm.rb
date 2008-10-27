@@ -578,7 +578,7 @@ class ModemCommander
 	}
 	
 	def messages(status=:unread)
-		puts @m.query "AT+CMGL=?"
+		puts @m.query("AT+CMGL=?")
 		
 		arg = CMGL_STATUS[status]
 		msgs = @m.command 'AT+CMGL="STO SENT"'#\"#{arg}\"\r\n", nil, ""
