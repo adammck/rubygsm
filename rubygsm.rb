@@ -126,6 +126,10 @@ class Modem
 		@log_indents = {}
 		@log_indents.default = 0
 		
+		# to keep multi-part messages until
+		# the last part is delivered
+		@multipart = {}
+		
 		# (re-) open the full log file
 		@log = File.new "rubygsm.log", "w"
 		
@@ -243,20 +247,52 @@ class Modem
 			from, timestamp = *m.captures
 			msg = lines[n+1].strip
 			
-			# just in case it wasn't already obvious...
-			log "Received message from #{from}: #{msg}"
-			
 			# notify the network that we accepted
 			# the incoming message (for read receipt)
 			# BEFORE pushing it to the incoming queue
 			# (to avoid really ugly race condition)
 			command "AT+CNMA"
 			
-			# store the incoming data to be picked up
-			# from the attr_accessor as a tuple (this
-			# is kind of ghetto, and WILL change later)
-			dt = parse_incoming_timestamp(timestamp)
-			@incoming.push [from, dt, msg]
+			# we might abort if this is
+			catch :skip_processing do
+			
+				# multi-part messages begin with ASCII char 130
+				if (msg[0] == 130) and (msg[1].chr == "@")
+					text = msg[7,999]
+					
+					# ensure we have a place for the incoming
+					# message part to live as they are delivered
+					@multipart[from] = []\
+						unless @multipart.has_key?(from)
+					
+					# append THIS PART
+					@multipart[from].push(text)
+					
+					# add useless message to log
+					part = @multipart[from].length
+					log "Received part #{part} of message from: #{from}"
+					
+					# abort if this is not the last part
+					throw :skip_processing\
+						unless (msg[5] == 173)
+					
+					# last part, so switch out the received
+					# part with the whole message, to be processed
+					# below (the sender and timestamp are the same
+					# for all parts, so no change needed there)
+					msg = @multipart[from].join("")
+					@multipart.delete(from)
+				end
+				
+				# just in case it wasn't already obvious...
+				log "Received message from #{from}: #{msg}"
+			
+				# store the incoming data to be picked up
+				# from the attr_accessor as a tuple (this
+				# is kind of ghetto, and WILL change later)
+				dt = parse_incoming_timestamp(timestamp)
+				@incoming.push [from, dt, msg]
+			end
 			
 			# drop the two CMT lines (meta-info and message),
 			# and patch the index to hit the next unchecked
