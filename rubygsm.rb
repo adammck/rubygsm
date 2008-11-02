@@ -351,7 +351,15 @@ class Modem
 		# reading took too long, so intercept
 		# and raise a more specific exception
 		rescue Timeout::Error
-			log = "Read: Timed out", :traffic
+			log = "Read: Timed out", :warn
+			
+			# send an escape, in case we are currently
+			# sending an sms in TEXT mode. without this,
+			# all subsequent AT commands end up in the message!
+			send(27.chr)
+			
+			# don't retry; let the application
+			# deal with that, for now
 			raise TimeoutError
 		end
 	end
