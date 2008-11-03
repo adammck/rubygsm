@@ -653,7 +653,7 @@ class ModemCommander
 		
 		# 1..9 is a special number which does not
 		# result in a real sms being sent (see inject.rb)
-		if to == "123456789"
+		if to == "+123456789"
 			@m.log "Not sending test message: #{msg}"
 			return true
 		end

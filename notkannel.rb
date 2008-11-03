@@ -28,15 +28,19 @@ module NotKannel
 				url = "/?sender=#{from}&message=#{msg}"
 				Net::HTTP.get "localhost", url, 4500
 			
-			# it's okay if the request failed,
-			# but log it anyway
-			rescue Errno::ECONNREFUSED
-				puts "----"
-				puts "  Couldn't GET: http:/local#{url}"
-				puts "  No application was listening"
-				puts "  Discarding incoming SMS"
-				puts "----"
+			# it's okay if the request failed, # but log it anyway. todo: should we
+			# automatically retry here?
+			rescue Errno::ECONNREFUSED: get_failed url, "No application was listening"
+			rescue Timeout::Error:      get_failed url, "The connection timed out"
 			end
+		end
+		
+		def get_failed url, msg
+			puts "----"
+			puts "  Couldn't GET: http://localhost/#{url}"
+			puts "  #{msg}"
+			puts "  Discarding incoming SMS"
+			puts "----"
 		end
 	end
 
@@ -76,10 +80,11 @@ module NotKannel
 				end
 		
 				begin
-					# (attempt to) send the
-					# sms via the modem commander
+					# (attempt to) send the sms
+					# via the modem commander, and
+					# respond as kannel would
 					$mc.send to, txt
-					res.write "OK"
+					res.write "0: Accepted"
 		
 				# couldn't send the message
 				rescue Modem::Error => err
@@ -98,6 +103,11 @@ end
 
 
 begin
+	# during dev, it's important to EXPLODE as
+	# noisily as possible when something goes wrong
+	Thread.abort_on_exception = true
+	Thread.current["name"] = "main"
+	
 	# initialize receiver (this works
 	# even if no modem is plugged in)
 	port = (ARGV.length > 0) ? ARGV[0] : "/dev/ttyUSB0"
@@ -134,6 +144,10 @@ begin
 		puts "Watching for new messages in #{path}..."
 		`mkdir #{path}` unless File.exists? path
 		
+		# to differentiate between injected and
+		# real incoming sms in the rubygsm log
+		Thread.current["name"] = "injector"
+
 		while true
 			`find #{path} -type f -print0`.split("\0").each do |file|
 				if m = File.read(file).strip.match(/^(\d+):\s*(.+)$/)
