@@ -352,14 +352,6 @@ class Modem
 		# and raise a more specific exception
 		rescue Timeout::Error
 			log = "Read: Timed out", :warn
-			
-			# send an escape, in case we are currently
-			# sending an sms in TEXT mode. without this,
-			# all subsequent AT commands end up in the message!
-			send(27.chr)
-			
-			# don't retry; let the application
-			# deal with that, for now
 			raise TimeoutError
 		end
 	end
@@ -659,6 +651,13 @@ class ModemCommander
 		# i'm on right now) so maybe add a PLUS
 		to = "+#{to}" unless(to[0,1]=="+")
 		
+		# 1..9 is a special number which does not
+		# result in a real sms being sent (see inject.rb)
+		if to == "123456789"
+			@m.log "Not sending test message: #{msg}"
+			return true
+		end
+		
 		# block the receiving thread while
 		# we're sending. it can take some time
 		@m.exclusive do
@@ -680,7 +679,7 @@ class ModemCommander
 			# result in someone getting a bunch
 			# of AT commands via sms!) so send
 			# an escpae, to... escape
-			rescue Exception => err
+			rescue Exception, Timeout::Error => err
 				@m.log "Rescued #{err}"
 				@m.send 27.chr
 				@m.wait
