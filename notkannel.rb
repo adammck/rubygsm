@@ -102,6 +102,11 @@ module NotKannel
 end
 
 
+# don't stack dump on INT
+trap("INT") do
+	exit
+end
+
 begin
 	# during dev, it's important to EXPLODE as
 	# noisily as possible when something goes wrong
