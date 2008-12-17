@@ -1,39 +1,32 @@
 RubyGSM is a rather plain Ruby library (not a Gem yet) which uses
 Ruby/SerialPort to send and receive SMS messages via a GSM modem.
 
-It also includes notkannel.rb, which provides a similar HTTP interface
-to Kannel[http://kannel.org]. It's not for production (yet), but is
-functional enough to run SmsApp[http://githib.com/adammck/smsapp]
-Applications, including SocialSMS[http://github.com/adammck/socialsms].
+=== Sample Usage
+  # initialize the modem
+  gsm = GsmModem.new("/dev/ttyS0")
 
+  class ReverseApp
+      def initialize(gsm)
+          @gsm = gsm
+      end
 
-== Sample Usage
-    # initialize the modem
-    m = Modem.new("/dev/ttyS0")
-    mc = ModemCommander.new(m)
+      def send(to, msg)
+          puts ">> #{to}: #{msg}"
+          @gsm.send to, msg
+      end
 
-    class ReverseApp
-        def initialize(mc)
-            @mc = mc
-        end
+      def incomming(from, datetime, msg)
+          puts "<< #{from}: #{msg}"
+          send from, msg.reverse
+      end
+  end
 
-        def send(to, msg)
-            puts ">> #{to}: #{msg}"
-            @mc.send to, msg
-        end
+  # create an instance of the application, and call
+  # the "incomming" method when a new sms arrives
+  app = ReverseApp.new(gsm)
+  gsm.receive app.method(:incomming)
 
-        def incomming(from, msg)
-            puts "<< #{from}: #{msg}"
-            send from, msg.reverse
-        end
-    end
-
-    # create an instance of the application, and call
-    # the "incomming" method when a new sms arrives
-    app = ReverseApp.new(mc)
-    mc.receive app.method(:incomming)
-
-== Devices Tested
+=== Devices Tested
 * Multitech MTCBA-G-F2
 * Multitech MTCBA-G-F4
 * Wavecom M1306B
