@@ -1,17 +1,20 @@
 #!/usr/bin/env ruby
+#:include:README.rdoc
+#:title:Ruby GSM
+#--
 # vim: noet
+#++
 
 require "serialport.so"
 require "timeout.rb"
 require "date.rb"
 
-class Modem
+class GsmModem
 	include Timeout
 	
-	class Error < StandardError
+	class Error < StandardError #:nodoc:
 		ERRORS = {
 			"CME" => {
-				# ME errors
 				3   => "Operation not allowed",
 				4   => "Operation not supported",
 				5   => "PH-SIM PIN required (SIM lock)",
@@ -99,9 +102,23 @@ class Modem
 		end
 	end
 	
-	class TimeoutError < Error
+	class TimeoutError < Error #:nodoc:
 		def desc
 			return "The command timed out"
+		end
+	end
+	
+	class WriteError < Error #:nodoc:
+		def desc
+			"The modem couldn't be written to. It " +\
+			"may have crashed or been unplugged"
+		end
+	end
+	
+	class ReadError < Error #:nodoc:
+		def desc
+			"The modem couldn't be read from. It " +\
+			"may have crashed or been unplugged"
 		end
 	end
 	
@@ -109,8 +126,14 @@ class Modem
 	
 	
 	attr_reader :device
-	attr_accessor :verbosity, :read_timeout, :incoming
+	attr_accessor :verbosity, :read_timeout
 	
+	# call-seq:
+	#   GsmModem.new(port, verbosity=:warn)
+	#
+	# Create a new instance, to initialize and communicate exclusively with a
+	# single modem device via the _port_ (which is usually either /dev/ttyS0
+	# or /dev/ttyUSB0), and start logging to *rubygsm.log* in the chdir.
 	def initialize(port, verbosity=:warn, baud=9600, cmd_delay=0.1)
 	
 		# port, baud, data bits, stop bits, parity
@@ -118,7 +141,7 @@ class Modem
 		
 		@cmd_delay = cmd_delay
 		@verbosity = verbosity
-		@read_timeout = 30
+		@read_timeout = 10
 		@locked_to = false
 		
 		# keep track of the depth which each
@@ -152,6 +175,11 @@ class Modem
 	
 	
 	
+	private # ------------------------------------------------------ PRIVATE --
+	
+	# Symbols accepted by the GsmModem.new _verbosity_
+	# argument. Each level includes all of the levels
+	# below it (ie. :debug includes all :warn messages)
 	LOG_LEVELS = {
 		:file    => 5,
 		:traffic => 4,
@@ -202,12 +230,7 @@ class Modem
 		log_decr
 	end
 	
-	
-	
-	
-	private # ------------------------------------------------------ PRIVATE --
-	
-	INCOMING_FMT = "%y/%m/%d,%H:%M:%S%Z"
+	INCOMING_FMT = "%y/%m/%d,%H:%M:%S%Z" #:nodoc:
 	
 	def parse_incoming_timestamp(ts)
 		# extract the weirdo quarter-hour timezone,
@@ -303,18 +326,21 @@ class Modem
 	end
 	
 	
-	
-	
-	public # -------------------------------------------------------- PUBLIC --
-	
-	
-	# send a string to the modem immediately,
+	# write a string to the modem immediately,
 	# without waiting for the lock
-	def send(str)
-		log "Send: #{str}", :traffic
+	def write(str)
+		log "Write: #{str.inspect}", :traffic
 		
-		str.each_byte do |b|
-			@device.putc(b.chr)
+		begin
+			str.each_byte do |b|
+				@device.putc(b.chr)
+			end
+		
+		# the device couldn't be written to,
+		# which probably means that it has
+		# crashed or been unplugged
+		rescue Errno::EIO
+			raise GsmModem::WriteError
 		end
 	end
 	
@@ -334,7 +360,16 @@ class Modem
 		begin
 			timeout(@read_timeout) do
 				while true do
-					buf << sprintf("%c", @device.getc)
+					char = @device.getc
+					
+					# die if we couldn't read
+					# (nil signifies an error)
+					raise GsmModem::ReadError\
+						if char.nil?
+					
+					# convert the character to ascii,
+					# and append it to the tmp buffer
+					buf << sprintf("%c", char)
 				
 					# if a terminator was just received,
 					# then return the current buffer
@@ -358,13 +393,13 @@ class Modem
 	
 	
 	# issue a single command, and wait for the response
-	def command(cmd, resp_term=nil, send_term="\r")
+	def command(cmd, resp_term=nil, write_term="\r")
 		begin
 			out = ""
 			log_incr "Command: #{cmd}"
 			
 			exclusive do
-				send(cmd + send_term)
+				write(cmd + write_term)
 				out = wait(resp_term)
 			end
 		
@@ -396,7 +431,7 @@ class Modem
 		# if the 515 (please wait) error was thrown,
 		# then automatically re-try the command after
 		# a short delay. for others, propagate
-		rescue Modem::Error => err
+		rescue Error => err
 			log "Rescued: #{err.desc}"
 			
 			if (err.type == "CMS") and (err.code == 515)
@@ -440,13 +475,13 @@ class Modem
 			# some errors contain useful error codes,
 			# so raise a proper error with a description
 			if m = buf.match(/^\+(CM[ES]) ERROR: (\d+)$/)
-				log_then_decr "!! Raising Modem::Error #{$1} #{$2}"
+				log_then_decr "!! Raising GsmModem::Error #{$1} #{$2}"
 				raise Error.new(*m.captures)
 			end
 		
 			# some errors are not so useful :|
 			if buf == "ERROR"
-				log_then_decr "!! Raising Modem::Error"
+				log_then_decr "!! Raising GsmModem::Error"
 				raise Error
 			end
 		
@@ -498,7 +533,7 @@ class Modem
 		
 		# something went bang, which happens, but
 		# just pass it on (after unlocking...)
-		rescue Modem::Error
+		rescue GsmModem::Error
 			raise
 		
 		
@@ -511,88 +546,159 @@ class Modem
 			log_decr
 		end
 	end
-end
-
-class ModemCommander
-	def initialize(modem)
-		@m = modem
-	end
 	
+	
+	
+	
+	public # -------------------------------------------------------- PUBLIC --
+	
+	# call-seq:
+	#   hardware => hash
+	#
+	# Returns a hash of containing information about the physical
+	# modem. The contents of each value are entirely manufacturer
+	# dependant, and vary wildly between devices.
+	#
+	#   modem.hardware => { :manufacturer => "Multitech".
+	#                       :model        => "MTCBA-G-F4", 
+	#                       :revision     => "123456789",
+	#                       :serial       => "ABCD" }
 	def hardware
 		return {
-			:manufacturer => @m.query("AT+CGMI"),
-			:model        => @m.query("AT+CGMM"),
-			:revision     => @m.query("AT+CGMR"),
-			:serial       => @m.query("AT+CGSN") }
+			:manufacturer => query("AT+CGMI"),
+			:model        => query("AT+CGMM"),
+			:revision     => query("AT+CGMR"),
+			:serial       => query("AT+CGSN") }
 	end
 	
 	
+	# The values accepted and returned by the AT+WMBS
+	# command, mapped to frequency bands, in MHz. Copied
+	# directly from the MultiTech AT command-set reference
+	Bands = {
+		"0" => "850",
+		"1" => "900",
+		"2" => "1800",
+		"3" => "1900",
+		"4" => "850/1900",
+		"5" => "900E/1800",
+		"6" => "900E/1900"
+	}
 	
-	
-	# ====
-	# SIM PINS
-	# ====
-	
-	def pin_ready?
-		@m.command("AT+CPIN?").include? "+CPIN: READY"
+	# call-seq:
+	#   compatible_bands => array
+	#
+	# Returns an array containing the bands supported by
+	# the modem.
+	def compatible_bands
+		data = query("AT+WMBS=?")
+		
+		# wmbs data is returned as something like:
+		#  +WMBS: (0,1,2,3,4,5,6),(0-1)
+		#  +WMBS: (0,3,4),(0-1)
+		# extract the numbers with a regex, and
+		# iterate each to resolve it to a more
+		# readable description
+		if m = data.match(/^\+WMBS: \(([\d,]+)\),/)
+			return m.captures[0].split(",").collect do |index|
+				Bands[index]
+			end
+		
+		else
+			# Todo: Recover from this exception
+			err = "Not WMBS data: #{data.inspect}"
+			raise RuntimeError.new(err)
+		end
 	end
 	
+	# call-seq:
+	#   band => string
+	#
+	# Returns a string containing the band
+	# currently selected for use by the modem.
+	def band
+		data = query("AT+WMBS?")
+		if m = data.match(/^\+WMBS: (\d+),/)
+			return Bands[m.captures[0]]
+			
+		else
+			# Todo: Recover from this exception
+			err = "Not WMBS data: #{data.inspect}"
+			raise RuntimeError.new(err)
+		end
+	end
+	
+	
+	# call-seq:
+	#   pin_required? => true or false
+	#
+	# Returns true if the modem is waiting for a SIM PIN. Some SIM cards will refuse
+	# to work until the correct four-digit PIN is provided via the _use_pin_ method.
+	def pin_required?
+		not command("AT+CPIN?").include?("+CPIN: READY")
+	end
+	
+	
+	# call-seq:
+	#   use_pin(pin) => true or false
+	#
+	# Provide a SIM PIN to the modem, and return true if it was accepted.
 	def use_pin(pin)
+		
 		# if the sim is already ready,
 		# this method isn't necessary
-		unless pin_ready?
+		if pin_required?
 			begin
-				@m.command "AT+CPIN=#{pin}"
+				command "AT+CPIN=#{pin}"
 		
 			# if the command failed, then
 			# the pin was not accepted
-			rescue Modem::Error
+			rescue GsmModem::Error
 				return false
 			end
 		end
 		
+		# no error = SIM
+		# PIN accepted!
 		true
 	end
 	
 	
-	
-	
-	# ====
-	# NETWORK
-	# ====
-	
-	def signal
-		data = @m.query("AT+CSQ")
+	# call-seq:
+	#   signal => fixnum or nil
+	#
+	# Returns an fixnum between 1 and 99, representing the current
+	# signal strength of the GSM network, or nil if we don't know.
+	def signal_strength
+		data = query("AT+CSQ")
 		if m = data.match(/^\+CSQ: (\d+),/)
+			
+			# 99 represents "not known or not detectable",
+			# but we'll use nil for that, since it's a bit
+			# more ruby-ish to test for boolean equality
 			csq = m.captures[0].to_i
-			
-			# 99 represents "not known or not
-			# detectable", which usually means
-			# the modem isn't on the network
-			if csq==99
-				err = "Signal strength unknown"
-				raise RuntimeError.new(err)
-			end
-			
-			return csq
+			return (csq<99) ? csq : nil
 			
 		else
+			# Todo: Recover from this exception
 			err = "Not CSQ data: #{data.inspect}"
 			raise RuntimeError.new(err)
 		end
 	end
 	
-	# wait until the signal strength
-	# is below 99 (not on the network)
+	
+	# call-seq:
+	#   wait_for_network
+	#
+	# Blocks until the signal strength indicates that the
+	# device is active on the GSM network. It's a good idea
+	# to call this before trying to send or receive anything.
 	def wait_for_network
-		begin
-			csq = signal
-			
+		
 		# keep retrying until the
 		# network comes up (if ever)
-		rescue RuntimeError
+		until csq = signal_strength
 			sleep 1
-			retry
 		end
 		
 		# return the last
@@ -601,49 +707,12 @@ class ModemCommander
 	end
 	
 	
-	
-	
-	# ====
-	# MESSAGE STORAGE
-	# ====
-	
-	CMGL_STATUS = {
-		:all => "ALL",
-		:read => "REC READ",
-		:unread => "REC UNREAD"
-	}
-	
-	def messages(status=:unread)
-		puts @m.query("AT+CMGL=?")
-		
-		arg = CMGL_STATUS[status]
-		msgs = @m.command 'AT+CMGL="STO SENT"'#\"#{arg}\"\r\n", nil, ""
-		out = []
-		
-		unless msgs.pop == "OK"
-			err = "Not CMGL data: #{msgs.inspect}"
-			raise RuntimeError.new(err)
-		end
-		
-		0.upto((msgs.length/2)-1) do |n|
-			meta, msg = msgs[(n*2), 2]
-			
-			if m = meta.match(/^\+CMGL:\s*(\d+),"(.+?)","(.+?)"$/)
-				index, status, caller = *m.captures
-				
-				out.push [caller, msg]
-			end
-		end
-		
-		return out
-	end
-	
-	
-	
-	# ====
-	# SMS RELAYING
-	# ====
-	
+	# call-seq:
+	#   send(recipient, message) => true or false
+	#
+	# Sends an SMS message, and returns true if the network
+	# accepted it for delivery. We currently can't handle read
+	# receipts, so have no way of confirming delivery.
 	def send(to, msg)
 		
 		# the number must be in the international
@@ -654,38 +723,37 @@ class ModemCommander
 		# 1..9 is a special number which does not
 		# result in a real sms being sent (see inject.rb)
 		if to == "+123456789"
-			@m.log "Not sending test message: #{msg}"
+			log "Not sending test message: #{msg}"
 			return true
 		end
 		
 		# block the receiving thread while
 		# we're sending. it can take some time
-		@m.exclusive do
-			@m.log_incr "Sending SMS to #{to}: #{msg}"
+		exclusive do
+			log_incr "Sending SMS to #{to}: #{msg}"
+			
+			# initiate the sms, and wait for either
+			# the text prompt or an error message
+			command "AT+CMGS=\"#{to}\"", ["\r\n", "> "]
 			
 			begin
-			
-				# initiate the sms, and wait for either
-				# the text prompt or an error message
-				@m.command "AT+CMGS=\"#{to}\"", ["\r\n", "> "]
-		
 				# send the sms, and wait until
 				# it is accepted or rejected
-				@m.send "#{msg}#{26.chr}"
-				@m.wait
+				write "#{msg}#{26.chr}"
+				wait
 				
-			# if something went wrong, we might
+			# if something went wrong, we are
 			# be stuck in entry mode (which will
 			# result in someone getting a bunch
 			# of AT commands via sms!) so send
 			# an escpae, to... escape
 			rescue Exception, Timeout::Error => err
-				@m.log "Rescued #{err}"
-				@m.send 27.chr
-				@m.wait
+				log "Rescued #{err}"
+				#write 27.chr
+				#wait
 			end
 			
-			@m.log_decr
+			log_decr
 		end
 				
 		# if no error was raised,
@@ -693,40 +761,73 @@ class ModemCommander
 		return true
 	end
 	
-	def receive(callback, join_thread=false)
+	
+	# call-seq:
+	#   receive(callback_method, interval=5, join_thread=false)
+	#
+	# Starts a new thread, which polls the device every _interval_
+	# seconds to capture incoming SMS and call _callback_method_
+	# for each.
+	#
+	#   class Receiver
+	#     def incoming(caller, datetime, message)
+	#       puts "From #{caller} at #{datetime}:", message
+	#     end
+	#   end
+	#   
+	#   # create the instances,
+	#   # and start receiving
+	#   rcv = Receiver.new
+	#   m = GsmModem.new "/dev/ttyS0"
+	#   m.receive inst.method :incoming
+	#   
+	#   # block until ctrl+c
+	#   while(true) { sleep 2 }
+	#
+	# Note: New messages may arrive at any time, even if this method's
+	# receiver thread isn't waiting to process them. They are not lost,
+	# but cached in @incoming until this method is called.
+	def receive(callback, interval=5, join_thread=false)
 		@polled = 0
-
+		
 		@thr = Thread.new do
 			Thread.current["name"] = "receiver"
 			
 			# keep on receiving forever
 			while true
-				@m.command "AT"
-			
+				command "AT"
+				
 				# enable new message notification mode
-				# every thirty seconds, in case the
+				# every ten intevals, in case the
 				# modem "forgets" (power cycle, etc)
-				if (@polled % 6) == 0
-					@m.command "AT+CNMI=2,2,0,0,0"
+				if (@polled % 10) == 0
+					command "AT+CNMI=2,2,0,0,0"
 				end
 				
-				unless @m.incoming.empty?
-					@m.incoming.each do |inc|
+				# if there are any new incoming messages,
+				# iterate, and pass each to the receiver
+				# in the same format that they were built
+				# back in _parse_incoming_sms!_
+				unless @incoming.empty?
+					@incoming.each do |inc|
 						begin
 							callback.call *inc
 						
 						rescue StandardError => err
-							puts "Error in callback: #{err}"
+							log "Error in callback: #{err}"
 						end
 					end
-				
-					@m.incoming.clear
+					
+					# we have dealt with all of the pending
+					# messages. todo: this is a ridiculous
+					# race condition, and i fail at ruby
+					@incoming.clear
 				end
-			
+				
 				# re-poll every
 				# five seconds
+				sleep(interval)
 				@polled += 1
-				sleep(5)
 			end
 		end
 		
@@ -735,79 +836,3 @@ class ModemCommander
 		@thr.join if join_thread
 	end
 end
-
-
-if __FILE__ == $0
-	port = (ARGV.length > 0) ? ARGV[0] : "/dev/ttyUSB0"
-	Thread.abort_on_exception = true
-	Thread.current["name"] = "main"
-	
-	begin
-		# initialize the modem
-		puts "Initializing modem on #{port}..."
-		m = Modem.new port
-		mc = ModemCommander.new(m)
-		mc.use_pin(1234)
-		
-		# demonstrate that the modem is working
-		puts "Identifying hardware..."
-		mc.hardware.each do |k,v|
-			puts "  #{k}: #{v}"
-		end
-		
-		# wait until the device has a signal
-		puts "Waiting for network..."
-		str = mc.wait_for_network
-		puts "Signal strength: #{str}"
-		
-		
-		# a very simple "application", which
-		# reverses and replies to messages
-		class ReverseApp
-			def initialize(mc)
-				@mc = mc
-			end
-			
-			def time(dt=nil)
-				dt = DateTime.now unless dt
-				#dt.strftime("%I:%M%p, %d/%m")
-				dt.strftime("%I:%M%p")
-			end
-			
-			def send(to, msg)
-				puts "[OUT] #{time} -> #{to}: #{msg}"
-				@mc.send to, msg
-			end
-			
-			def incomming(from, dt, msg)
-				puts "[IN]  #{time(dt)} <- #{from}: #{msg}"
-				send from, msg.reverse
-			end
-		end
-		
-		# wait for incomming sms
-		puts "Starting app..."
-		rcv  = ReverseApp.new mc
-		meth = rcv.method :incomming
-		mc.receive meth
-		
-		# block until ctrl+c
-		while true do
-			sleep(1)
-		end
-		
-		
-	rescue Modem::Error => err
-		puts "\n[ERR] #{err.desc}\n"
-		puts err.backtrace
-	
-	
-	rescue Interrupt => err
-		if m
-			puts "Resetting modem..."
-			#m.command "AT+CFUN=1"
-			m.command "ATZ"
-		end
-	end
-end
-
