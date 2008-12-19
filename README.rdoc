@@ -1,32 +1,47 @@
-RubyGSM is a rather plain Ruby library (not a Gem yet) which uses
-Ruby/SerialPort to send and receive SMS messages via a GSM modem.
+RubyGSM is a Ruby library which uses ruby-serialport[http://github.com/toholio/ruby-serialport]
+to provide a nifty interface to send and receive SMS messages via a GSM modem.
+
 
 === Sample Usage
-  # initialize the modem
-  gsm = GsmModem.new("/dev/ttyS0")
-
+	# included in bin/gsm-app-reverse
+	
   class ReverseApp
       def initialize(gsm)
+          gsm.receive(method(:incoming))
           @gsm = gsm
       end
-
-      def send(to, msg)
-          puts ">> #{to}: #{msg}"
-          @gsm.send to, msg
-      end
-
-      def incomming(from, datetime, msg)
-          puts "<< #{from}: #{msg}"
-          send from, msg.reverse
+      
+      def incoming(from, datetime, message)
+          @gsm.send(from, message.reverse)
       end
   end
 
-  # create an instance of the application, and call
-  # the "incomming" method when a new sms arrives
-  app = ReverseApp.new(gsm)
-  gsm.receive app.method(:incomming)
+  gsm = GsmModem.new("/dev/ttyS0")
+  ReverseApp.new(gsm)
+
+
+=== Installing
+RubyGSM is distributed via GitHub[http://github.com/adammck/rubygsm], which you must
+add as a gem source before installing:
+
+  $ sudo gem sources -a http://gems.github.com
+
+The library depends upon ruby-serialport, which is currently maintained on GitHub by
+Toholio[http://github.com/toholio/ruby-serialport]. This library is included as a Gem
+dependancy, so to install both:
+
+  $ sudo gem install adammck-rubygsm
+
+==== For Debian/Ubuntu users...
+The ruby-serialport library is available in the APT repository as a binary package, which
+is substatially less hassle to install than the Gem, for those who don't have a compiler
+installed (I prefer not to, on production servers). To install the package via apt, and
+ignore the Gem dependancy:
+
+  $ sudo apt-get install libserialport-ruby
+  $ sudo gem install --ignore-dependencies adammck-rubygsm
+
 
 === Devices Tested
-* Multitech MTCBA-G-F2
-* Multitech MTCBA-G-F4
+* Multitech MTCBA
 * Wavecom M1306B

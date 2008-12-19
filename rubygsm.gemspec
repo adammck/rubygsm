@@ -11,10 +11,10 @@ Gem::Specification.new do |s|
 	s.files = [
 		"rubygsm.gemspec",
 		"README.rdoc",
-		"rubygsm.rb",
 		"lib/rubygsm.rb",
-		"lib/errors.rb",
-		"lib/log.rb"
+		"lib/rubygsm/core.rb",
+		"lib/rubygsm/errors.rb",
+		"lib/rubygsm/log.rb"
 	]
 	
 	s.add_dependency("toholio-serialport", ["> 0.7.1"])

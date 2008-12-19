@@ -87,7 +87,7 @@ class GsmModem
 		def desc
 			# attempt to return something useful
 			return(ERRORS[@type][@code])\
-				if(@type and ERRORS[@type] and @code)
+				if(@type and ERRORS[@type] and @code and ERRORS[@type][@code])
 			
 			# fall back to something not-so useful
 			return "Unknown error (unrecognized command?) " +\
