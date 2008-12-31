@@ -93,11 +93,16 @@ class GsmModem
 			return "Unknown error (unrecognized command?) " +\
 			       "[type=#{@type}] [code=#{code}]"
 		end
+		
+		alias :to_s :desc
 	end
+	
+	# TODO: what the hell is going on with
+	# all these "desc" methods? refactor this
 	
 	class TimeoutError < Error #:nodoc:
 		def desc
-			return "The command timed out"
+			"The command timed out"
 		end
 	end
 	
@@ -112,6 +117,12 @@ class GsmModem
 		def desc
 			"The modem couldn't be read from. It " +\
 			"may have crashed or been unplugged"
+		end
+	end
+	
+	class AutoDetectError < Error #:nodoc:
+		def desc
+			"No modem could be auto-detected."
 		end
 	end
 end

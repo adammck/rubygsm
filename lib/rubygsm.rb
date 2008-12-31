@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 # vim: noet
 
-require "rubygsm/core.rb"
-require "rubygsm/errors.rb"
-require "rubygsm/lib.rb"
+dir = File.dirname(__FILE__)
+require "#{dir}/rubygsm/core.rb"
+require "#{dir}/rubygsm/errors.rb"
+require "#{dir}/rubygsm/log.rb"

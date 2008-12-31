@@ -3,7 +3,6 @@ to provide a nifty interface to send and receive SMS messages via a GSM modem.
 
 
 === Sample Usage
-	# included in bin/gsm-app-reverse
 	
   class ReverseApp
       def initialize(gsm)
@@ -16,7 +15,7 @@ to provide a nifty interface to send and receive SMS messages via a GSM modem.
       end
   end
 
-  gsm = GsmModem.new("/dev/ttyS0")
+  gsm = GsmModem.new
   ReverseApp.new(gsm)
 
 
@@ -31,6 +30,7 @@ Toholio[http://github.com/toholio/ruby-serialport]. This library is included as 
 dependancy, so to install both:
 
   $ sudo gem install adammck-rubygsm
+
 
 ==== For Debian/Ubuntu users...
 The ruby-serialport library is available in the APT repository as a binary package, which

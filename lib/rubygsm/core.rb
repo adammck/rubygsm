@@ -20,7 +20,7 @@ class GsmModem
 	
 	
 	attr_accessor :verbosity, :read_timeout
-	attr_reader :device
+	attr_reader :device, :port
 	
 	# call-seq:
 	#   GsmModem.new(port, verbosity=:warn)
@@ -28,10 +28,39 @@ class GsmModem
 	# Create a new instance, to initialize and communicate exclusively with a
 	# single modem device via the _port_ (which is usually either /dev/ttyS0
 	# or /dev/ttyUSB0), and start logging to *rubygsm.log* in the chdir.
-	def initialize(port, verbosity=:warn, baud=9600, cmd_delay=0.1)
+	def initialize(port=:auto, verbosity=:warn, baud=9600, cmd_delay=0.1)
+		
+		# if no port was specified, we'll attempt to iterate
+		# all of the serial ports that i've ever seen gsm
+		# modems mounted on. this is kind of shaky, and
+		# only works well with a single modem. for now,
+		# we'll try: ttyS0, ttyUSB0, ttyACM0, ttyS1...
+		if port == :auto
+			@device, @port = catch(:found) do
+				0.upto(8).each do |n|
+					["ttyS", "ttyUSB", "ttyACM"].each do |prefix|
+						try_port = "/dev/#{prefix}#{n}"
+			
+						begin
+							# serialport args: port, baud, data bits, stop bits, parity
+							device = SerialPort.new(try_port, baud, 8, 1, SerialPort::NONE)
+							throw :found, [device, try_port]
+						
+						rescue ArgumentError, Errno::ENOENT
+							# do nothing, just continue to
+							# try the next port in order
+						end
+					end
+				end
 	
-		# port, baud, data bits, stop bits, parity
-		@device = SerialPort.new(port, baud, 8, 1, SerialPort::NONE)
+				# tried all ports, nothing worked
+				raise AutoDetectError
+			end
+			
+		else
+			@device = SerialPort.new(port, baud, 8, 1, SerialPort::NONE)
+			@port = port
+		end
 		
 		@cmd_delay = cmd_delay
 		@verbosity = verbosity
@@ -419,21 +448,21 @@ class GsmModem
 	# command, mapped to frequency bands, in MHz. Copied
 	# directly from the MultiTech AT command-set reference
 	Bands = {
-		"0" => "850",
-		"1" => "900",
-		"2" => "1800",
-		"3" => "1900",
-		"4" => "850/1900",
-		"5" => "900E/1800",
-		"6" => "900E/1900"
+		0 => "850",
+		1 => "900",
+		2 => "1800",
+		3 => "1900",
+		4 => "850/1900",
+		5 => "900E/1800",
+		6 => "900E/1900"
 	}
 	
 	# call-seq:
-	#   compatible_bands => array
+	#   bands_available => array
 	#
 	# Returns an array containing the bands supported by
 	# the modem.
-	def compatible_bands
+	def bands_available
 		data = query("AT+WMBS=?")
 		
 		# wmbs data is returned as something like:
@@ -444,7 +473,7 @@ class GsmModem
 		# readable description
 		if m = data.match(/^\+WMBS: \(([\d,]+)\),/)
 			return m.captures[0].split(",").collect do |index|
-				Bands[index]
+				Bands[index.to_i]
 			end
 		
 		else
@@ -462,7 +491,7 @@ class GsmModem
 	def band
 		data = query("AT+WMBS?")
 		if m = data.match(/^\+WMBS: (\d+),/)
-			return Bands[m.captures[0]]
+			return Bands[m.captures[0].to_i]
 			
 		else
 			# Todo: Recover from this exception
@@ -471,6 +500,57 @@ class GsmModem
 		end
 	end
 	
+	BandAreas = {
+		:usa     => 4,
+		:africa  => 5,
+		:europe  => 5,
+		:asia    => 5,
+		:mideast => 5
+	}
+	
+	# call-seq:
+	#   band=(_numeric_band_) => string
+	#
+	# Sets the band currently selected for use
+	# by the modem, using either a literal band
+	# number (passed directly to the modem, see
+	# GsmModem.Bands) or a named area from
+	# GsmModem.BandAreas:
+	#
+	#   m = GsmModem.new
+	#   m.band = :usa    => "850/1900"
+	#   m.band = :africa => "900E/1800"
+	#   m.band = :monkey => ArgumentError
+	#
+	# (Note that as usual, the United States of
+	# America is wearing its ass backwards.)
+	#
+	# Raises ArgumentError if an unrecognized band was
+	# given, or raises GsmModem::Error if the modem does
+	# not support the given band.
+	def band=(new_band)
+		
+		# resolve named bands into numeric
+		# (mhz values first, then band areas)
+		unless new_band.is_a?(Numeric)
+			
+			if Bands.has_value?(new_band.to_s)
+				new_band = Bands.index(new_band.to_s)
+			
+			elsif BandAreas.has_key?(new_band.to_sym)
+				new_band = BandAreas[new_band.to_sym]
+				
+			else
+				err = "Invalid band: #{new_band}"
+				raise ArgumentError.new(err)
+			end
+		end
+		
+		# set the band right now (second wmbs
+		# argument is: 0=NEXT-BOOT, 1=NOW). if it
+		# fails, allowGsmModem::Error to propagate
+		command("AT+WMBS=#{new_band},1")
+	end
 	
 	# call-seq:
 	#   pin_required? => true or false
