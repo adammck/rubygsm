@@ -37,7 +37,7 @@ class GsmModem
 		# we'll try: ttyS0, ttyUSB0, ttyACM0, ttyS1...
 		if port == :auto
 			@device, @port = catch(:found) do
-				0.upto(8).each do |n|
+				0.upto(8) do |n|
 					["ttyS", "ttyUSB", "ttyACM"].each do |prefix|
 						try_port = "/dev/#{prefix}#{n}"
 			
