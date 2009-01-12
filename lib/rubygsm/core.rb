@@ -773,10 +773,10 @@ class Modem
 				# in the same format that they were built
 				# back in _parse_incoming_sms!_
 				unless @incoming.empty?
-					@incoming.each do |inc|
+					@incoming.each do |msg|
 						begin
-							callback.call *inc
-						
+							callback.call(msg)
+							
 						rescue StandardError => err
 							log "Error in callback: #{err}"
 						end
