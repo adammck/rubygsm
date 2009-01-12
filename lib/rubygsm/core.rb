@@ -14,8 +14,8 @@ require "date.rb"
 require "rubygems"
 require "serialport"
 
-
-class GsmModem
+module Gsm
+class Modem
 	include Timeout
 	
 	
@@ -23,7 +23,7 @@ class GsmModem
 	attr_reader :device, :port
 	
 	# call-seq:
-	#   GsmModem.new(port, verbosity=:warn)
+	#   Gsm::Modem.new(port, verbosity=:warn)
 	#
 	# Create a new instance, to initialize and communicate exclusively with a
 	# single modem device via the _port_ (which is usually either /dev/ttyS0
@@ -144,8 +144,18 @@ class GsmModem
 			# notify the network that we accepted
 			# the incoming message (for read receipt)
 			# BEFORE pushing it to the incoming queue
-			# (to avoid really ugly race condition)
-			command "AT+CNMA"
+			# (to avoid really ugly race condition if
+			# the message is grabbed from the queue
+			# and responded to quickly, before we get
+			# a chance to issue at+cnma)
+			begin
+				command "AT+CNMA"
+				
+			# not terribly important if it
+			# fails, even though it shouldn't
+			rescue Gsm::Error
+				log "Receipt acknowledgement (CNMA) was rejected"
+			end
 			
 			# we might abort if this is
 			catch :skip_processing do
@@ -184,8 +194,8 @@ class GsmModem
 				# store the incoming data to be picked up
 				# from the attr_accessor as a tuple (this
 				# is kind of ghetto, and WILL change later)
-				dt = parse_incoming_timestamp(timestamp)
-				@incoming.push [from, dt, msg]
+				sent = parse_incoming_timestamp(timestamp)
+				@incoming.push Gsm::Incoming.new(self, from, sent, msg)
 			end
 			
 			# drop the two CMT lines (meta-info and message),
@@ -211,7 +221,7 @@ class GsmModem
 		# which probably means that it has
 		# crashed or been unplugged
 		rescue Errno::EIO
-			raise GsmModem::WriteError
+			raise Gsm::WriteError
 		end
 	end
 	
@@ -235,7 +245,7 @@ class GsmModem
 					
 					# die if we couldn't read
 					# (nil signifies an error)
-					raise GsmModem::ReadError\
+					raise Gsm::ReadError\
 						if char.nil?
 					
 					# convert the character to ascii,
@@ -346,13 +356,13 @@ class GsmModem
 			# some errors contain useful error codes,
 			# so raise a proper error with a description
 			if m = buf.match(/^\+(CM[ES]) ERROR: (\d+)$/)
-				log_then_decr "!! Raising GsmModem::Error #{$1} #{$2}"
+				log_then_decr "!! Raising Gsm::Error #{$1} #{$2}"
 				raise Error.new(*m.captures)
 			end
 		
 			# some errors are not so useful :|
 			if buf == "ERROR"
-				log_then_decr "!! Raising GsmModem::Error"
+				log_then_decr "!! Raising Gsm::Error"
 				raise Error
 			end
 		
@@ -380,7 +390,9 @@ class GsmModem
 		begin
 			
 			# prevent other threads from issuing
-			# commands while this block is working
+			# commands TO THIS MODDEM while this
+			# block is working. this does not lock
+			# threads, just the gsm device
 			if @locked_to and (@locked_to != Thread.current)
 				log "Locked by #{@locked_to["name"]}, waiting..."
 			
@@ -404,7 +416,7 @@ class GsmModem
 		
 		# something went bang, which happens, but
 		# just pass it on (after unlocking...)
-		rescue GsmModem::Error
+		rescue Gsm::Error
 			raise
 		
 		
@@ -514,10 +526,10 @@ class GsmModem
 	# Sets the band currently selected for use
 	# by the modem, using either a literal band
 	# number (passed directly to the modem, see
-	# GsmModem.Bands) or a named area from
-	# GsmModem.BandAreas:
+	# Gsm::Modem.Bands) or a named area from
+	# Gsm::Modem.BandAreas:
 	#
-	#   m = GsmModem.new
+	#   m = Gsm::Modem.new
 	#   m.band = :usa    => "850/1900"
 	#   m.band = :africa => "900E/1800"
 	#   m.band = :monkey => ArgumentError
@@ -526,7 +538,7 @@ class GsmModem
 	# America is wearing its ass backwards.)
 	#
 	# Raises ArgumentError if an unrecognized band was
-	# given, or raises GsmModem::Error if the modem does
+	# given, or raises Gsm::Error if the modem does
 	# not support the given band.
 	def band=(new_band)
 		
@@ -548,7 +560,7 @@ class GsmModem
 		
 		# set the band right now (second wmbs
 		# argument is: 0=NEXT-BOOT, 1=NOW). if it
-		# fails, allowGsmModem::Error to propagate
+		# fails, allow Gsm::Error to propagate
 		command("AT+WMBS=#{new_band},1")
 	end
 	
@@ -576,7 +588,7 @@ class GsmModem
 		
 			# if the command failed, then
 			# the pin was not accepted
-			rescue GsmModem::Error
+			rescue Gsm::Error
 				return false
 			end
 		end
@@ -631,7 +643,8 @@ class GsmModem
 	
 	
 	# call-seq:
-	#   send(recipient, message) => true or false
+	#   send_sms(message) => true or false
+	#   send_sms(recipient, text) => true or false
 	#
 	# Sends an SMS message, and returns true if the network
 	# accepted it for delivery. We currently can't handle read
@@ -641,14 +654,36 @@ class GsmModem
 	# in turn passes it straight to the SMSC (sms message center).
 	# for maximum compatibility, use phone numbers in international
 	# format, including the *plus* and *country code*.
-	def send(to, msg)
+	def send_sms(*args)
+		
+		# extract values from Outgoing object.
+		# for now, this does not offer anything
+		# in addition to the recipient/text pair,
+		# but provides an upgrade path for future
+		# features (like FLASH and VALIDITY TIME)
+		if args.length == 1\
+		and args[0].is_a? Gsm::Outgoing
+			to = args[0].recipient
+			msg = args[0].text
+		
+		# the < v0.4 arguments. maybe
+		# deprecate this one day
+		elsif args.length == 2
+			to, msg = *args
+		
+		else
+			raise ArgumentError,\
+				"The Gsm::Modem#send_sms method accepts" +\
+				"a single Gsm::Outgoing instance, " +\
+				"or recipient and text strings"
+		end
 		
 		# the number must be in the international
 		# format for some SMSCs (notably, the one
 		# i'm on right now) so maybe add a PLUS
 		#to = "+#{to}" unless(to[0,1]=="+")
 		
-		# 1..9 is a special number which does not
+		# 1..9 is a special number which does notm
 		# result in a real sms being sent (see inject.rb)
 		if to == "+123456789"
 			log "Not sending test message: #{msg}"
@@ -699,16 +734,16 @@ class GsmModem
 	# for each.
 	#
 	#   class Receiver
-	#     def incoming(caller, datetime, message)
-	#       puts "From #{caller} at #{datetime}:", message
+	#     def incoming(msg)
+	#       puts "From #{msg.from} at #{msg.sent}:", msg.text
 	#     end
 	#   end
 	#   
 	#   # create the instances,
 	#   # and start receiving
 	#   rcv = Receiver.new
-	#   m = GsmModem.new "/dev/ttyS0"
-	#   m.receive inst.method :incoming
+	#   m = Gsm::Modem.new "/dev/ttyS0"
+	#   m.receive rcv.method :incoming
 	#   
 	#   # block until ctrl+c
 	#   while(true) { sleep 2 }
@@ -764,4 +799,5 @@ class GsmModem
 		# threaded (like debugging handsets)
 		@thr.join if join_thread
 	end
-end
+end # Modem
+end # Gsm

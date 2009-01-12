@@ -1,10 +1,11 @@
 #!/usr/bin/env ruby
 # vim: noet
 
-class GsmModem
+module Gsm
+class Modem
 	private
 	
-	# Symbols accepted by the GsmModem.new _verbosity_
+	# Symbols accepted by the Gsm::Modem.new _verbosity_
 	# argument. Each level includes all of the levels
 	# below it (ie. :debug includes all :warn messages)
 	LOG_LEVELS = {
@@ -36,7 +37,6 @@ class GsmModem
 		end
 	end
 	
-	
 	# log a message, and increment future messages
 	# in this thread. useful for nesting logic
 	def log_incr(*args)
@@ -56,4 +56,5 @@ class GsmModem
 		log(*args)
 		log_decr
 	end
-end
+end # Modem
+end # Gsm

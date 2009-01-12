@@ -4,7 +4,7 @@
 # vim: noet
 #++
 
-class GsmModem
+module Gsm
 	class Error < StandardError
 		ERRORS = {
 			"CME" => {
