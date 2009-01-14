@@ -90,8 +90,8 @@ class Modem
 		
 		# initialize the modem
 		command "ATE0"      # echo off
-		command "AT+CMEE=1" # useful errors
-		command "AT+WIND=0" # no notifications
+#COMPAT		command "AT+CMEE=1" # useful errors
+#COMPAT		command "AT+WIND=0" # no notifications
 		command "AT+CMGF=1" # switch to text mode
 	end
 	
@@ -760,12 +760,13 @@ class Modem
 			# keep on receiving forever
 			while true
 				command "AT"
-				
+        check_for_inbox_messages
+        
 				# enable new message notification mode
 				# every ten intevals, in case the
 				# modem "forgets" (power cycle, etc)
 				if (@polled % 10) == 0
-					command "AT+CNMI=2,2,0,0,0"
+#COMPAT					command "AT+CNMI=2,2,0,0,0"
 				end
 				
 				# if there are any new incoming messages,
@@ -799,5 +800,52 @@ class Modem
 		# threaded (like debugging handsets)
 		@thr.join if join_thread
 	end
+  
+  def select_default_mailbox
+    # Eventually we will select the first mailbox as the default
+    result = command("AT+CPMS=?")
+    boxes = result.first.scan(/\"(\w+)\"/).flatten #"
+    mailbox = boxes.first        
+    command "AT+CPMS=\"#{mailbox}\""
+    mailbox
+  rescue
+    raise RuntimeError.new("Could not select the default mailbox")
+    nil
+  end
+  
+  # Could accomplish this with a CMGL=\"REC UNREAD\" too
+  def check_for_inbox_messages
+    return unless select_default_mailbox
+    
+    # Try to read the first message from the box (should this be 0?)
+    begin
+      out = command("AT+CMGR=1")
+    rescue
+      return     
+    end  
+    return if out.nil? || out.empty?
+
+    # Delete that message
+    command("AT+CMGD=1")
+
+    # Break that down
+    header = out.first
+    msg = out[1..out.size-2].join("\n")
+    validity = out.last
+       				
+    # Read the header
+    header = header.scan(/\"([^"]+)\"/).flatten #"
+    status = header[0]
+    from = header[1]
+    timestamp = header[2]
+    # Parsing this using the incoming format failed, it need %Y instead of %y
+    sent = DateTime.parse(timestamp)
+                        
+    # just in case it wasn't already obvious...
+    log "Received message from #{from}: #{msg}"
+  
+    @incoming.push Gsm::Incoming.new(self, from, sent, msg)
+  end
+  
 end # Modem
 end # Gsm

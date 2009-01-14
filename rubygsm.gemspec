@@ -15,6 +15,8 @@ Gem::Specification.new do |s|
 		"lib/rubygsm/core.rb",
 		"lib/rubygsm/errors.rb",
 		"lib/rubygsm/log.rb",
+		"lib/rubygsm/msg/incoming.rb",
+		"lib/rubygsm/msg/outgoing.rb",
 		"bin/gsm-modem-band"
 	]
 	
