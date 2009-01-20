@@ -76,12 +76,8 @@ class Modem
 		# the last part is delivered
 		@multipart = {}
 		
-		# (re-) open the full log file
-		@log = File.new "rubygsm.log", "w"
-		
-		# initialization message (yes, it's underlined)
-		msg = "RubyGSM Initialized at: #{Time.now}"
-		log msg + "\n" + ("=" * msg.length), :file
+		# start logging to file
+		log_init
 		
 		# to store incoming messages
 		# until they're dealt with by

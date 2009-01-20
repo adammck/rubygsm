@@ -15,6 +15,25 @@ class Modem
 		:warn    => 2,
 		:error   => 1 }
 	
+	def log_init
+		
+		fn_port = File.basename(@port)
+		fn_time = Time.now.strftime("%Y-%m-%d.%H-%M-%S")
+		
+		# (re-) open the full log file
+		filename = "rubygsm.#{fn_port}.#{fn_time}"
+		@log = File.new filename, "w"
+		
+		# dump some useful information
+		# at the top, for debugging
+		log "RUBYGSM"
+		log "  port: #{@port}"
+		log "  timeout: #{@read_timeout}"
+		log "  verbosity: #{@verbosity}"
+		log "  started at: #{Time.now}"
+		log "===="
+	end
+	
 	def log(msg, level=:debug)
 		ind = "  " * (@log_indents[Thread.current] or 0)
 		
