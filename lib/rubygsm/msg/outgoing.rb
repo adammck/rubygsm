@@ -26,5 +26,12 @@ module Gsm
 			# more modifications
 			freeze
 		end
+		
+		# Returns the recipient of this message,
+		# so incoming and outgoing messages
+		# can be logged in the same way.
+		def number
+			recipient
+		end
 	end
 end

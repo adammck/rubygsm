@@ -21,8 +21,11 @@ module Gsm
 			@received = Time.now
 		end
 		
-		def to_a
-			[@device, @sender, @sent, @text]
+		# Returns the sender of this message,
+		# so incoming and outgoing messages
+		# can be logged in the same way.
+		def number
+			sender
 		end
 	end
 end
