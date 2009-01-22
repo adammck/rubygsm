@@ -642,15 +642,38 @@ class Modem
 	#   send_sms(message) => true or false
 	#   send_sms(recipient, text) => true or false
 	#
+	# Sends an SMS message via _send_sms!_, but traps
+	# any exceptions raised, and returns false instead.
+	# Use this when you don't really care if the message
+	# was sent, which is... never.
+	def send_sms(*args)
+		begin
+			send_sms!(*args)
+			return true
+		
+		# something went wrong
+		rescue Gsm::Error
+			return false
+		end
+	end
+	
+	
+	# call-seq:
+	#   send_sms!(message) => true or raises Gsm::Error
+	#   send_sms!(receipt, text) => true or raises Gsm::Error
+	#
 	# Sends an SMS message, and returns true if the network
 	# accepted it for delivery. We currently can't handle read
-	# receipts, so have no way of confirming delivery.
+	# receipts, so have no way of confirming delivery. If the
+	# device or network rejects the message, a Gsm::Error is
+	# raised containing (hopefully) information about what went
+	# wrong.
 	#
 	# Note: the recipient is passed directly to the modem, which
 	# in turn passes it straight to the SMSC (sms message center).
-	# for maximum compatibility, use phone numbers in international
+	# For maximum compatibility, use phone numbers in international
 	# format, including the *plus* and *country code*.
-	def send_sms(*args)
+	def send_sms!(*args)
 		
 		# extract values from Outgoing object.
 		# for now, this does not offer anything
@@ -708,12 +731,16 @@ class Modem
 			# an escpae, to... escape
 			rescue Exception, Timeout::Error => err
 				log "Rescued #{err.desc}"
-				return false
-				#write 27.chr
-				#wait
+				write 27.chr
+				
+				# allow the error to propagate,
+				# so the application can catch
+				# it for more useful info
+				raise
+				
+			ensure
+				log_decr
 			end
-			
-			log_decr
 		end
 				
 		# if no error was raised,
