@@ -94,7 +94,11 @@ module Gsm
 			       "[type=#{@type}] [code=#{code}]"
 		end
 		
-		alias :to_s :desc
+		# not the same as alias :to_s, :desc,
+		# because this works on subclasses
+		def to_s
+			desc
+		end
 	end
 	
 	# TODO: what the hell is going on with
