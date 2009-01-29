@@ -1,0 +1,38 @@
+#!/usr/bin/env ruby
+# vim: noet
+
+dir = File.dirname(__FILE__)
+require "#{dir}/../lib/rubygsm.rb"
+
+
+# expand args (TODO: optparser,
+# which we need so very badly)
+# or fail with USAGE message
+if (ARGV.length == 2)
+	recipient, msg = *ARGV
+	port = :auto
+
+elsif (ARGV.length == 3)
+	port, recipient, msg = *ARGV
+
+else
+	puts "Usage: sms [PORT] RECIPIENT MESSAGE"
+	puts "(don't forget to quote the message)"
+	puts
+	puts "Examples:"
+	puts '  sms +13474201234 Hello'
+	puts '  sms /dev/ttyS0 +13474201234 "Hello from RubyGSM"'
+	exit
+end
+
+# initialize the modem, send the sms, and
+# terminate. currently, rubygsm does a lot
+# of things that aren't strictly required
+# to get this done; maybe refactor
+begin
+	modem = Gsm::Modem.new(port)
+	modem.send_sms!(recipient, msg)
+	
+rescue Gsm::Error => err
+	puts "Error: #{err.desc}"
+end
