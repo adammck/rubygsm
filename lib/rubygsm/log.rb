@@ -17,6 +17,11 @@ class Modem
 	
 	def log_init
 		
+		# abort if we aren't connected
+		# to a real serial port
+		return false if\
+			@port.nil?
+		
 		fn_port = File.basename(@port)
 		fn_time = Time.now.strftime("%Y-%m-%d.%H-%M-%S")
 		
@@ -35,6 +40,12 @@ class Modem
 	end
 	
 	def log(msg, level=:debug)
+		
+		# abort if logging isn't
+		# enabled yet (or ever?)
+		return false if\
+			@log.nil?
+		
 		ind = "  " * (@log_indents[Thread.current] or 0)
 		
 		# create a 
