@@ -29,7 +29,7 @@ module Gsm
 				# if this character is a terminator (13.chr (\r)), 
 				# interpret and clear the @incoming buffer
 				if @in[-1] == 13
-					got_command @in.strip
+					process(@in.strip)
 					@in = ""
 				end
 			end
@@ -46,21 +46,66 @@ module Gsm
 			private
 			
 			def output(str)
-				@out << str + "\r\n"
+				@out << "\r\n#{str}\r\n"
 			end
 			
-			def got_command(cmd)
+			def error
+				output("ERROR")
+			end
+			
+			def ok
+				output("OK")
+			end
+			
+			def process(cmd)
+				
+				# catch and parse AT commands, and process
+				# them via an instance method of this class
+				if m = cmd.match(/^AT\+([A-Z\?]+)(?:=(.+))?$/)
+					cmd, flat_args = *m.captures
+					meth = "at_#{cmd.downcase}"
+					args = parse_args(flat_args)
+					
+					# process the command, and return OK
+					# if it succeeded. if it failed, we'll
+					# fall through and return ERROR
+					if respond_to?(meth, true) && send(meth, *args)
+						return ok
+					end
 				
 				# enable (ATE1) or disable
 				# (ATE0) character echo [104]
-				if m = cmd.match(/^ATE[01]$/)
+				elsif m = cmd.match(/^ATE[01]$/)
 					@echo = (m.captures[0] == "1") ? true : false
-					output "OK"
-					
-				else
-					#raise NotImplementedError
-					output "ERROR"
+					return ok
 				end
+				
+				error
+			end
+			
+			# Returns the argument portion of an AT command
+			# split into an array. This isn't as robust as a
+			# real modem, but works for RubyGSM.
+			def parse_args(str)
+				str.split(",").collect do |arg|
+					arg.strip.sub('"', "")
+				end
+			end
+			
+			# ===========
+			# AT COMMANDS
+			# ===========
+			
+			def at_cmee(bool)
+				true
+			end
+			
+			def at_wind(bool)
+				true
+			end
+			
+			def at_cmgf(bool)
+				true
 			end
 		end
 	end

@@ -21,8 +21,8 @@ describe Gsm do
 	end
 	
 	it "initializes the modem" do
-		#lambda do
+		lambda do
 			@gsm = Gsm::Modem.new(@modem)
-		#end.should_not raise_error
+		end.should_not raise_error
 	end
 end
