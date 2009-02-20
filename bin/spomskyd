@@ -1,0 +1,153 @@
+#!/usr/bin/env ruby
+# vim: noet
+
+dir = File.dirname(__FILE__)
+require "#{dir}/../lib/rubygsm.rb"
+
+require "rubygems"
+require "net/http"
+require "rack"
+
+module Spomsky
+	class Server
+		PORT = 8100
+		
+		attr_reader :modem
+		
+		def initialize
+			@subscribers = {}
+			@modem = Gsm::Modem.new(:auto)
+			@modem.receive method(:incoming)
+			@app = RackApp.new(self)
+			puts "Initialized"
+		end
+		
+		# Starts the Rack App, which blocks this thread forever,
+		# waiting for incoming HTTP requests (from clients) and/or
+		# SMS messages (from the world!)
+		def serve_forever
+			Rack::Handler::Mongrel.run(
+				@app, :Port=>PORT)
+		end
+		
+		# Notify each of @subscribers that an incoming SMS has
+		# arrived. This is called back RubyGSM (see #initialize).
+		def incoming(msg)
+			data = { :source => "sms://#{msg.sender}", :body => msg.text }
+			puts "Incoming message: #{data}"
+			
+			@subscribers.each do |s|
+				begin
+					puts "  Posting to: #{s}"
+					res = Net::HTTP.post_form(URI.parse(s), data)
+				
+				# if something goes wrong... do nothing. a client
+				# has probably vanished without unsubscribing. TODO:
+				# count these errors per-client, and drop after a few
+				rescue StandardError
+					# ???
+				end
+			end
+		end
+		
+		# Sends an SMS via the attached RubyGSM instance (@modem).
+		# Provided here for API sanity; could just as easily be
+		# called as Spomksy::Server#modem.send_sms
+		def send_sms(recipient, text)
+			@modem.send_sms(recipient, text)
+		end
+		
+		# Adds a URI to the @subscribers array, to be
+		# notified (via HTTP) when an SMS arrives. Does
+		# nothing if the URI is already subscribed.
+		def subscribe(uri)
+			 @subscribers.push(uri) unless\
+				 @subscribers.include?(uri)
+		end
+		
+		# Removes a URI from the @subscribers array, or
+		# does nothing in the URI is not subscribed.
+		def unsubscribe(uri)
+			@subscribers.delete(uri)
+		end
+		
+		
+		class RackApp
+			def initialize(server)
+				@server = server
+			end
+			
+			def resp(body, code=200)
+				[code, {"content-type" => "text/plain"}, body]
+			end
+			
+			def call(env)
+				req = Rack::Request.new(env)
+				pi = req.path_info
+				po = req.POST
+				
+				unless req.post?
+					return resp("Method not allowed", 405)
+				end
+				
+				if pi == "/send"
+					@server.send_sms(number(po["destination"]), po["body"])
+				
+				elsif pi == "/receive/subscribe"
+					@server.subscribe(po["uri"])
+					
+				elsif pi == "/receive/unsubscribe"
+					@server.unsubscribe(po["uri"])
+				end
+				
+				[200, {"content-type" => "text/plain"}, "OK"]
+			end
+			
+			
+			
+			def number(dest)
+				
+				# extract the protocol and recipient (international
+				# format phone number) from destination uri string
+				unless m = dest.match(/^([a-z]+):\/\/(.+)$/)
+					throw :bad_dest
+				end
+				
+				# we only support sending sms right
+				# now. TODO: maybe add more in future
+				unless m.captures[0] == "sms"
+					throw :bad_dest_protocol
+				end
+				
+				# return just the number
+				m.captures[1]
+			end
+			
+			private
+			
+			def send_sms(req, body, destination)
+			end
+			
+			def subscribe(req, uri)
+				@server.subscribe(uri)
+			end
+			
+			def unsubscribe(req, uri)
+				@server.unsubscribe(uri)
+			end
+		end
+	end
+end
+
+# don't stack dump on INT
+trap("INT") do
+	exit
+end
+
+begin
+	server = Spomsky::Server.new
+	server.serve_forever
+	
+rescue Gsm::Error => err
+	puts "GSM Error: #{err.desc}"
+end
