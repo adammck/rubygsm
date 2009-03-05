@@ -910,6 +910,5 @@ class Modem
   		n = nn
   	end
 	end
-  
 end # Modem
 end # Gsm
