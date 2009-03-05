@@ -84,11 +84,17 @@ class Modem
 		# someone else, like a commander
 		@incoming = []
 		
-		# initialize the modem
-		command "ATE0"      # echo off
-		command "AT+CMEE=1" # useful errors
-		command "AT+WIND=0" # no notifications
-		command "AT+CMGF=1" # switch to text mode
+		# initialize the modem; rubygsm is (supposed to be) robust enough to function
+		# without these working (hence the "try_"), but they make different modems more
+		# consistant, and the logs a bit more sane.
+		try_command "ATE0"      # echo off
+		try_command "AT+CMEE=1" # useful errors
+		try_command "AT+WIND=0" # no notifications
+		
+		# PDU mode isn't supported right now (although
+		# it should be, because it's quite simple), so
+		# switching to text mode (mode 1) is MANDATORY
+		command "AT+CMGF=1"
 	end
 	
 	
@@ -309,7 +315,7 @@ class Modem
 		# then automatically re-try the command after
 		# a short delay. for others, propagate
 		rescue Error => err
-			log "Rescued: #{err.desc}"
+			log "Rescued (in #command): #{err.desc}"
 			
 			if (err.type == "CMS") and (err.code == 515)
 				sleep 2
@@ -318,6 +324,24 @@ class Modem
 			
 			log_decr
 			raise
+		end
+	end
+	
+	
+	# proxy a single command to #command, but catch any
+	# Gsm::Error exceptions that are raised, and return
+	# nil. This should be used to issue commands which
+	# aren't vital - of which there are VERY FEW.
+	def try_command(cmd, *args)
+		begin
+			log_incr "Trying Command: #{cmd}"
+			out = command(cmd, *args)
+			log_decr "=#{out}"
+			return out
+			
+		rescue Error => err
+			log_then_decr "Rescued (in #try_command): #{err.desc}"
+			return nil
 		end
 	end
 	
