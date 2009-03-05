@@ -7,10 +7,15 @@ require "#{dir}/../lib/rubygsm.rb"
 require "rubygems"
 require "net/http"
 require "rack"
+require "uuid"
 
 module Spomsky
 	class Server
 		PORT = 8100
+		
+		class Error < RuntimeError; end
+		class MalformedDestinationError < Error; end
+		class UnsupportedDestinationError < Error; end
 		
 		attr_reader :modem
 		
@@ -19,6 +24,7 @@ module Spomsky
 			@modem = Gsm::Modem.new(:auto)
 			@modem.receive method(:incoming)
 			@app = RackApp.new(self)
+			@uuid = UUID.new()
 			puts "Initialized"
 		end
 		
@@ -35,11 +41,12 @@ module Spomsky
 		def incoming(msg)
 			data = { :source => "sms://#{msg.sender}", :body => msg.text }
 			puts "Incoming message: #{data.inspect}"
+			puts "Sending to: #{@subscribers.inspect}"
 			
-			@subscribers.each do |s|
+			@subscribers.each do |uuid, uri|
 				begin
-					puts "  Posting to: #{s}"
-					res = Net::HTTP.post_form(URI.parse(s), data)
+					puts "  Posting to: #{uri}"
+					res = Net::HTTP.post_form(URI.parse(uri), data)
 				
 				# if something goes wrong... do nothing. a client
 				# has probably vanished without unsubscribing. TODO:
@@ -50,6 +57,10 @@ module Spomsky
 			end
 		end
 		
+		def test_message
+			incoming(Gsm::Incoming.new(nil, "123", Time.now, "Test Message"))
+		end
+		
 		# Sends an SMS via the attached RubyGSM instance (@modem).
 		# Provided here for API sanity; could just as easily be
 		# called as Spomksy::Server#modem.send_sms
@@ -57,18 +68,29 @@ module Spomsky
 			@modem.send_sms(recipient, text)
 		end
 		
-		# Adds a URI to the @subscribers array, to be
+		# Adds a URI to the @subscribers hash, to be
 		# notified (via HTTP) when an SMS arrives. Does
 		# nothing if the URI is already subscribed.
 		def subscribe(uri)
-			 @subscribers.push(uri) unless\
-				 @subscribers.include?(uri)
+			puts "Subscribed: #{uri}"
+			
+			# remote any existing subscribers to
+			# the same url, to prevent duplicates
+			@subscribers.each do |the_uuid, the_uri|
+				@subscribers.delete(the_uuid) if\
+					the_uri == uri
+			end
+			
+			uuid = @uuid.generate
+			@subscribers[uuid] = uri
+			uuid
 		end
 		
-		# Removes a URI from the @subscribers array, or
+		# Removes a URI from the @subscribers hash, or
 		# does nothing in the URI is not subscribed.
-		def unsubscribe(uri)
-			@subscribers.delete(uri)
+		def unsubscribe(uuid)
+			puts "Unubscribed: #{uuid}"
+			@subscribers.delete(uuid)
 		end
 		
 		
@@ -77,30 +99,44 @@ module Spomsky
 				@server = server
 			end
 			
-			def resp(body, code=200)
-				[code, {"content-type" => "text/plain"}, body]
+			def resp(body, code=200, more_headers = {})
+				out = [code, {"content-type" => "text/plain"}.merge(more_headers), body]
+				puts "Response: #{out.inspect}"
+				out
 			end
 			
 			def call(env)
 				req = Rack::Request.new(env)
 				pi = req.path_info
 				po = req.POST
+				headers = {}
 				
+				# only POST is supported
 				unless req.post?
 					return resp("Method not allowed", 405)
 				end
 				
-				if pi == "/send"
-					@server.send_sms(number(po["destination"]), po["body"])
+				begin
+					if pi == "/send"
+						@server.send_sms(number(po["destination"]), po["body"])
+						resp("Message Sent")
 				
-				elsif pi == "/receive/subscribe"
-					@server.subscribe(po["uri"])
+					elsif pi == "/receive/subscribe"
+						uuid = @server.subscribe("http://#{po["host"]}:#{po["port"]}/#{po["path"]}")
+						resp("Subscribed", 200, { "x-subscription-uuid" => uuid })
 					
-				elsif pi == "/receive/unsubscribe"
-					@server.unsubscribe(po["uri"])
-				end
+					elsif pi == "/receive/unsubscribe"
+						@server.unsubscribe(po["uuid"])
+						resp("Unsubscribed")
+					
+					# no other urls are supported
+					else
+						resp("Not Found", 404)
+					end
 				
-				[200, {"content-type" => "text/plain"}, "OK"]
+				rescue Spomsky::Server::Error => err
+					resp("Error: #{err.message}", 500)
+				end
 			end
 			
 			
@@ -110,13 +146,13 @@ module Spomsky
 				# extract the protocol and recipient (international
 				# format phone number) from destination uri string
 				unless m = dest.match(/^([a-z]+):\/\/(.+)$/)
-					throw :bad_dest
+					raise MalformedDestinationError
 				end
 				
 				# we only support sending sms right
 				# now. TODO: maybe add more in future
 				unless m.captures[0] == "sms"
-					throw :bad_dest_protocol
+					raise UnsupportedDestinationError
 				end
 				
 				# return just the number
@@ -146,6 +182,13 @@ end
 
 begin
 	server = Spomsky::Server.new
+	
+	# when signal usr1 is received, send
+	# a test message to every subscriber
+	trap("USR1") do
+		server.test_message
+	end
+	
 	server.serve_forever
 	
 rescue Gsm::Error => err
