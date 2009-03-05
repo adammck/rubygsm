@@ -34,7 +34,7 @@ module Spomsky
 		# arrived. This is called back RubyGSM (see #initialize).
 		def incoming(msg)
 			data = { :source => "sms://#{msg.sender}", :body => msg.text }
-			puts "Incoming message: #{data}"
+			puts "Incoming message: #{data.inspect}"
 			
 			@subscribers.each do |s|
 				begin
