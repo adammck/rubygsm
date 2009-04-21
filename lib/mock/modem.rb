@@ -4,6 +4,7 @@
 module Gsm
 	module Mock
 		class Modem
+			TITLE = "Working"
 			attr_reader :echo
 			
 			def initialize
