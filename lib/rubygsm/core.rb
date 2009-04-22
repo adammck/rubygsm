@@ -72,7 +72,7 @@ class Modem
 		
 		@cmd_delay = cmd_delay
 		@verbosity = verbosity
-		@retry_commands = 5
+		@retry_commands = 6
 		@read_timeout = 10
 		@locked_to = false
 		
@@ -161,14 +161,14 @@ class Modem
 			# the message is grabbed from the queue
 			# and responded to quickly, before we get
 			# a chance to issue at+cnma)
-			begin
-				command "AT+CNMA"
-				
-			# not terribly important if it
-			# fails, even though it shouldn't
-			rescue Gsm::Error
-				log "Receipt acknowledgement (CNMA) was rejected"
-			end
+#			begin
+#				command "AT+CNMA"
+#				
+#			# not terribly important if it
+#			# fails, even though it shouldn't
+#			rescue Gsm::Error
+#				log "Receipt acknowledgement (CNMA) was rejected"
+#			end
 			
 			# we might abort if this part of a
 			# multi-part message, but not the last
@@ -290,7 +290,7 @@ class Modem
 	
 	def command(cmd, *args)
 		out = nil
-		tries = 1
+		tries = 0
 		
 		begin
 			# attempt to issue the command, which
@@ -300,7 +300,8 @@ class Modem
 			
 		rescue Exception => err
 			log_then_decr "Rescued (in #command): #{err.desc}"
-			if (tries += 1) < @retry_commands
+			if (tries += 1) <= @retry_commands
+				sleep((2**tries)/2)
 				retry
 			end
 			
@@ -782,17 +783,21 @@ class Modem
 		# block the receiving thread while
 		# we're sending. it can take some time
 		exclusive do
-			log_incr "Sending SMS to #{to}: #{msg}"
-			
-			# initiate the sms, and wait for either
-			# the text prompt or an error message
-			command "AT+CMGS=\"#{to}\"", ["\r\n", "> "]
+			tries = 0
 			
 			begin
+				log_incr "Sending SMS to #{to}: #{msg}"
+				log "Attempt #{tries+1} of #{@retry_commands}"
+			
+				# initiate the sms, and wait for either
+				# the text prompt or an error message
+				command! "AT+CMGS=\"#{to}\"", ["\r\n", "> "]
+			
 				# send the sms, and wait until
 				# it is accepted or rejected
 				write "#{msg}#{26.chr}"
 				wait
+				
 				
 			# if something went wrong, we are
 			# be stuck in entry mode (which will
@@ -800,8 +805,15 @@ class Modem
 			# of AT commands via sms!) so send
 			# an escpae, to... escape
 			rescue Exception, Timeout::Error => err
-				log "Rescued #{err.desc}"
+				err_str = err.respond_to?(:desc) ? err.desc : err
+				log "Rescued #{err_str}"
 				write 27.chr
+				
+				if (tries +=1) < @retry_commands
+					log_decr
+					sleep((2**tries)/2)
+					retry
+				end
 				
 				# allow the error to propagate,
 				# so the application can catch
