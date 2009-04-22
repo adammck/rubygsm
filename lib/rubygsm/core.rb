@@ -72,6 +72,7 @@ class Modem
 		
 		@cmd_delay = cmd_delay
 		@verbosity = verbosity
+		@retry_commands = 5
 		@read_timeout = 10
 		@locked_to = false
 		
@@ -287,11 +288,44 @@ class Modem
 	end
 	
 	
-	# issue a single command, and wait for the response
-	def command(cmd, resp_term=nil, write_term="\r")
+	def command(cmd, *args)
+		out = nil
+		tries = 1
+		
+		begin
+			# attempt to issue the command, which
+			# might blow up, if the modem is angry
+			log_incr "Command: #{cmd} (##{tries} of #{@retry_commands})"
+			out = command!(cmd, *args)
+			
+		rescue Exception => err
+			log_then_decr "Rescued (in #command): #{err.desc}"
+			if (tries += 1) < @retry_commands
+				retry
+			end
+			
+			# we've retried enough times.
+			# allow  error to propagate
+			log_decr
+			raise
+		end
+		
+		# the command failed... return something easy
+		# to test for, even if the actual error would
+		# be more useful
+		log_decr "=#{out.inspect} // command"
+		return out
+	end
+	
+	
+	# issue a single command, and wait for the response. if the command
+	# fails (CMS or CME error is returned by the modem), a Gsm::Error
+	# will be raised, and allowed to propagate. see Modem#command to
+	# automatically retry failing commands
+	def command!(cmd, resp_term=nil, write_term="\r")
 		begin
 			out = ""
-			log_incr "Command: #{cmd}"
+			log_incr "Command!: #{cmd}"
 			
 			exclusive do
 				write(cmd + write_term)
@@ -316,7 +350,7 @@ class Modem
 			parse_incoming_sms!(out)
 		
 			# log the modified output
-			log_decr "=#{out.inspect}"
+			log_decr "=#{out.inspect} // command!"
 		
 			# rest up for a bit (modems are
 			# slow, and get confused easily)
@@ -327,7 +361,7 @@ class Modem
 		# then automatically re-try the command after
 		# a short delay. for others, propagate
 		rescue Error => err
-			log "Rescued (in #command): #{err.desc}"
+			log_then_decr "Rescued (in #command!): #{err.desc}"
 			
 			if (err.type == "CMS") and (err.code == 515)
 				sleep 2
@@ -348,7 +382,7 @@ class Modem
 		begin
 			log_incr "Trying Command: #{cmd}"
 			out = command(cmd, *args)
-			log_decr "=#{out}"
+			log_decr "=#{out.inspect} // try_command"
 			return out
 			
 		rescue Error => err

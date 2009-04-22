@@ -15,6 +15,8 @@ module Gsm
 					type = ((rand * 5) > 0.5) ? "CME" : "CMS"
 					output("#{type} ERROR: #{code}")
 					@last_command = cmd
+				else
+					super
 				end
 			end
 		end
