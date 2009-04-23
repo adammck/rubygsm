@@ -12,7 +12,7 @@ begin
 	
 rescue Gsm::Modem::Error => err
 	puts "Initialization Error:"
-	puts "  " + err.desc
+	puts "  #{err}"
 	exit
 end
 
@@ -38,11 +38,11 @@ if ARGV[0]
 	begin
 		modem.band = new_band
 		puts "Switched to: "
-		puts "  " + modem.band
+		puts "  #{modem.band}"
 		
 	rescue StandardError => err
 		puts "Error switching band: "
-		puts "  " + err
+		puts "  #{err}"
 	end
 	
 	puts

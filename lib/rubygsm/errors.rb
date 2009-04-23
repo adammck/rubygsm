@@ -84,7 +84,7 @@ module Gsm
 			@type = type
 		end
 		
-		def desc
+		def to_s
 			# attempt to return something useful
 			return(ERRORS[@type][@code])\
 				if(@type and ERRORS[@type] and @code and ERRORS[@type][@code])
@@ -93,39 +93,36 @@ module Gsm
 			return "Unknown error (unrecognized command?) " +\
 			       "[type=#{@type}] [code=#{code}]"
 		end
-		
-		# not the same as alias :to_s, :desc,
-		# because this works on subclasses
-		def to_s
-			desc
-		end
 	end
 	
-	# TODO: what the hell is going on with
-	# all these "desc" methods? refactor this
-	
 	class TimeoutError < Error #:nodoc:
-		def desc
+		def to_s
 			"The command timed out"
 		end
 	end
 	
 	class WriteError < Error #:nodoc:
-		def desc
+		def to_s
 			"The modem couldn't be written to. It " +\
 			"may have crashed or been unplugged"
 		end
 	end
 	
 	class ReadError < Error #:nodoc:
-		def desc
+		def to_s
 			"The modem couldn't be read from. It " +\
 			"may have crashed or been unplugged"
 		end
 	end
+
+	class ResetError < Error #:nodoc:
+		def to_s
+			"The modem could not be reset"
+		end
+	end
 	
 	class AutoDetectError < Error #:nodoc:
-		def desc
+		def to_s
 			"No modem could be auto-detected."
 		end
 	end

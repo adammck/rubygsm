@@ -34,5 +34,5 @@ begin
 	modem.send_sms!(recipient, msg)
 	
 rescue Gsm::Error => err
-	puts "Error: #{err.desc}"
+	puts "Error: #{err}"
 end

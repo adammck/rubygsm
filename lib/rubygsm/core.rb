@@ -299,7 +299,8 @@ class Modem
 			out = command!(cmd, *args)
 			
 		rescue Exception => err
-			log_then_decr "Rescued (in #command): #{err.desc}"
+			log_then_decr "Rescued (in #command): #{err}"
+			
 			if (tries += 1) <= @retry_commands
 				sleep((2**tries)/2)
 				retry
@@ -362,7 +363,7 @@ class Modem
 		# then automatically re-try the command after
 		# a short delay. for others, propagate
 		rescue Error => err
-			log_then_decr "Rescued (in #command!): #{err.desc}"
+			log_then_decr "Rescued (in #command!): #{err}"
 			
 			if (err.type == "CMS") and (err.code == 515)
 				sleep 2
@@ -387,7 +388,7 @@ class Modem
 			return out
 			
 		rescue Error => err
-			log_then_decr "Rescued (in #try_command): #{err.desc}"
+			log_then_decr "Rescued (in #try_command): #{err}"
 			return nil
 		end
 	end
@@ -805,8 +806,7 @@ class Modem
 			# of AT commands via sms!) so send
 			# an escpae, to... escape
 			rescue Exception, Timeout::Error => err
-				err_str = err.respond_to?(:desc) ? err.desc : err
-				log "Rescued #{err_str}"
+				log "Rescued #{err}"
 				write 27.chr
 				
 				if (tries +=1) < @retry_commands
