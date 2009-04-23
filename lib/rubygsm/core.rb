@@ -72,10 +72,21 @@ class Modem
 		
 		@cmd_delay = cmd_delay
 		@verbosity = verbosity
-		@retry_commands = 6
-		@read_timeout = 10
 		@locked_to = false
+
+		# how long should we wait for the modem to
+		# respond before raising a timeout error?
+		@read_timeout = 10
 		
+		# how many times should we retry commands (after
+		# they fail, or time out) before giving up?
+		@retry_commands = 4
+
+		# when the maximum number of retries is exceeded,
+		# should the modem AT+CFUN (hard reset), or allow
+		# the exception to propagate?
+		@reset_on_failure = true
+
 		# keep track of the depth which each
 		# thread is indented in the log
 		@log_indents = {}
@@ -289,32 +300,48 @@ class Modem
 	
 	
 	def command(cmd, *args)
-		out = nil
 		tries = 0
+		out = []
 		
 		begin
 			# attempt to issue the command, which
 			# might blow up, if the modem is angry
-			log_incr "Command: #{cmd} (##{tries} of #{@retry_commands})"
+			log_incr "Command: #{cmd} (##{tries+1} of #{@retry_commands+1})"
 			out = command!(cmd, *args)
 			
 		rescue Exception => err
 			log_then_decr "Rescued (in #command): #{err}"
 			
 			if (tries += 1) <= @retry_commands
-				sleep((2**tries)/2)
+				delay = (2**tries)/2
+
+				log "Sleeping for #{delay}"
+				sleep(delay)
 				retry
 			end
 			
-			# we've retried enough times.
-			# allow  error to propagate
-			log_decr
-			raise
+			# when things just won't work, reboot the modem,
+			# then try again. if the reboot fails, there is
+			# nothing that we can do; so propagate
+			# reboot the modem. this happens more often
+			if @reset_on_failure
+				log_then_decr "Resetting the modem"
+				retry if reset!
+
+				# failed to reboot :'(
+				log "Couldn't rese"
+				raise
+
+			else
+				# we've retried enough times, but don't
+				# want to auto reset. let's hope that
+				# someone upstream has a better idea
+				log_decr "Propagating exception"
+				raise
+			end
 		end
-		
-		# the command failed... return something easy
-		# to test for, even if the actual error would
-		# be more useful
+	
+		# the command was successful
 		log_decr "=#{out.inspect} // command"
 		return out
 	end
@@ -502,6 +529,23 @@ class Modem
 	
 	
 	public
+	
+	
+	# call-seq:
+	#   reset! => true or false
+	#
+	# Resets the modem software, or raises Gsm::ResetError.
+	def reset!
+		begin
+			return command!("AT+CFUN=1")
+	
+		# if the reset fails, we'll wrap the exception in
+		# a Gsm::ResetError, so it can be caught upstream.
+		# this usually indicates a serious problem.
+		rescue Exception
+			raise ResetError	
+		end
+	end
 	
 	
 	# call-seq:
