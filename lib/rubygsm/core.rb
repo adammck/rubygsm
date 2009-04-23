@@ -912,7 +912,7 @@ class Modem
 		@thr.join if join_thread
 	end
 	
-  
+
 	def fetch_stored_messages
 		
 		# fetch all/unread (see constant) messages
@@ -926,11 +926,11 @@ class Modem
 		# keep on iterating the data we received,
 		# until there's none left. if there were no
 		# stored messages waiting, this done nothing!
-  	while n < lines.length
-  		
-  		# attempt to parse the CMGL line (we're skipping
-  		# two lines at a time in this loop, so we will
-  		# always land at a CMGL line here) - they look like:
+		while n < lines.length
+			
+			# attempt to parse the CMGL line (we're skipping
+			# two lines at a time in this loop, so we will
+			# always land at a CMGL line here) - they look like:
 			#   +CMGL: 0,"REC READ","+13364130840",,"09/03/04,21:59:31-20"
 			unless m = lines[n].match(/^\+CMGL: (\d+),"(.+?)","(.+?)",*?,"(.+?)".*?$/)
 				err = "Couldn't parse CMGL data: #{lines[n]}"
@@ -948,21 +948,21 @@ class Modem
 			# message text from the lines between _n_ and _nn_
 			index, status, from, timestamp = *m.captures
 			msg_text = lines[(n+1)..(nn-1)].join("\n").strip
-  		
+			
 			# log the incoming message
 			log "Fetched stored message from #{from}: #{msg_text.inspect}"
-  		
+			
 			# store the incoming data to be picked up
 			# from the attr_accessor as a tuple (this
 			# is kind of ghetto, and WILL change later)
 			sent = parse_incoming_timestamp(timestamp)
 			msg = Gsm::Incoming.new(self, from, sent, msg_text)
 			@incoming.push(msg)
-  		
-  		# skip over the messge line(s),
-  		# on to the next CMGL line
-  		n = nn
-  	end
+		
+			# skip over the messge line(s),
+			# on to the next CMGL line
+			n = nn
+		end
 	end
 end # Modem
 end # Gsm
