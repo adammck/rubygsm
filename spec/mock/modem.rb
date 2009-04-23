@@ -4,7 +4,6 @@
 module Gsm
 	module Mock
 		class Modem
-			TITLE = "Working"
 			attr_reader :echo
 			
 			def initialize
@@ -13,7 +12,6 @@ module Gsm
 				@in = ""
 				@out = ""
 			end
-			
 			
 			# => obj
 			def putc(obj)
@@ -34,6 +32,7 @@ module Gsm
 					@in = ""
 				end
 			end
+			
 
 			# Returns the first byte (er, actually, the first CHARACTER,
 			# which will no-doubt be a future source of bugs) of the
@@ -43,8 +42,6 @@ module Gsm
 				(@out.empty?) ? nil : @out.slice!(0)
 			end
 			
-			
-			private
 			
 			def output(str)
 				@out << "\r\n#{str}\r\n"
@@ -88,7 +85,7 @@ module Gsm
 			# split into an array. This isn't as robust as a
 			# real modem, but works for RubyGSM.
 			def parse_args(str)
-				str.split(",").collect do |arg|
+				str.to_s.split(",").collect do |arg|
 					arg.strip.sub('"', "")
 				end
 			end
@@ -106,6 +103,17 @@ module Gsm
 			end
 			
 			def at_cmgf(bool)
+				true
+			end
+		
+			def at_csq(*args)
+			    	# return a signal strength of
+				# somewhere between 20 and 80
+				output("+CSQ: #{rand(60)+20},0")
+			end
+
+			# reset the modem software
+			def at_cfun(bool)
 				true
 			end
 		end
