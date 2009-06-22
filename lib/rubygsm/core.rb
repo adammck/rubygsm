@@ -156,8 +156,14 @@ class Modem
 			# since this line IS a CMT string (an incoming
 			# SMS), parse it and store it to deal with later
 			unless m = lines[n].match(/^\+CMT: "(.+?)",.*?,"(.+?)".*?$/)
-				err = "Couldn't parse CMT data: #{lines[n]}"
-				raise RuntimeError.new(err)
+				
+				# the CMT data couldn't be parsed, so scrap it
+				# and move on to the next line.  we'll lose the
+				# incoming message, but it's better than blowing up
+				log "Couldn't parse CMT data: #{lines[n]}", :warn
+				lines.slice!(n, 2)
+				n -= 1
+				next
 			end
 			
 			# extract the meta-info from the CMT line,
@@ -172,14 +178,14 @@ class Modem
 			# the message is grabbed from the queue
 			# and responded to quickly, before we get
 			# a chance to issue at+cnma)
-#			begin
-#				command "AT+CNMA"
-#				
-#			# not terribly important if it
-#			# fails, even though it shouldn't
-#			rescue Gsm::Error
-#				log "Receipt acknowledgement (CNMA) was rejected"
-#			end
+			begin
+				command "AT+CNMA"
+				
+			# not terribly important if it
+			# fails, even though it shouldn't
+			rescue Gsm::Error
+				log "Receipt acknowledgement (CNMA) was rejected"
+			end
 			
 			# we might abort if this part of a
 			# multi-part message, but not the last
