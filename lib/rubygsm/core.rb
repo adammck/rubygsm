@@ -335,7 +335,7 @@ class Modem
 				retry if reset!
 
 				# failed to reboot :'(
-				log "Couldn't rese"
+				log "Couldn't reset"
 				raise
 
 			else
