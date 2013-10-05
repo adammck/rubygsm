@@ -15,9 +15,14 @@ to provide a nifty interface to send and receive SMS messages via a GSM modem.
       end
   end
 
-  gsm = GsmModem.new("/dev/tty.usbserial")
+  gsm = Gsm::Modem.new("/dev/tty.usbserial")
   ReverseApp.new(gsm)
 
+If you just want to send sms
+
+  gsm = Gsm::Modem.new("/dev/tty.usbserial")
+  msg = Gsm::Outgoing.new(gsm, "+447777777777", "Oh hai")
+  msg.send!
 
 === Installing
 RubyGSM is distributed via GitHub[http://github.com/adammck/rubygsm], which you must
