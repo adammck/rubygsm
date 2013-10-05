@@ -3,19 +3,19 @@ to provide a nifty interface to send and receive SMS messages via a GSM modem.
 
 
 === Sample Usage
-	
+
   class ReverseApp
       def initialize(gsm)
           gsm.receive(method(:incoming))
           @gsm = gsm
       end
-      
+
       def incoming(from, datetime, message)
           @gsm.send(from, message.reverse)
       end
   end
 
-  gsm = GsmModem.new
+  gsm = GsmModem.new("/dev/tty.usbserial")
   ReverseApp.new(gsm)
 
 
@@ -41,6 +41,12 @@ ignore the Gem dependancy:
   $ sudo apt-get install libserialport-ruby
   $ sudo gem install --ignore-dependencies adammck-rubygsm
 
+=== Building gem
+
+  $ gem build rubygsm.gemspec
+
+=== Known issues
+There is a known issue when you try to send message to shortcode. Enble :debug to see problem.
 
 === Devices Tested
 * Multitech MTCBA
