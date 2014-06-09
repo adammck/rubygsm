@@ -416,7 +416,7 @@ class Modem
 	def try_command(cmd, *args)
 		begin
 			log_incr "Trying Command: #{cmd}"
-			out = command(cmd, *args)
+			out = command!(cmd, *args)
 			log_decr "=#{out.inspect} // try_command"
 			return out
 			
